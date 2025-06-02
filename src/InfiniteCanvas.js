@@ -57,7 +57,19 @@ class InfiniteCanvas {
         this.baseURL = localStorage.getItem('ai_base_url') || 'https://api.openai.com/v1';
         this.aiModels = localStorage.getItem('ai_models') || 'gpt-3.5-turbo';
         this.isGeneratingAI = false;
-        
+
+        // Performance optimizations
+        this.spatialGrid = new Map(); // Spatial hash grid for fast collision detection
+        this.gridSize = 200; // Grid cell size in canvas units
+        this.visibleNodes = new Set(); // Cache of currently visible nodes
+        this.isDirty = true; // Flag to track if redraw is needed
+        this.renderThrottleId = null; // For throttling renders
+        this.lastRenderTime = 0;
+        this.targetFPS = 60;
+        this.frameTime = 1000 / this.targetFPS;
+        this.lastMouseX = 0; // Mouse position tracking for performance
+        this.lastMouseY = 0;
+
         this.init();
     }
     
@@ -70,7 +82,7 @@ class InfiniteCanvas {
         // Initialize history with current state
         this.saveState();
         
-        this.draw();
+        this.markDirty();
         this.updateUndoRedoButtons();
     }
     
@@ -446,7 +458,7 @@ class InfiniteCanvas {
         const rect = this.canvas.getBoundingClientRect();
         this.canvas.width = rect.width;
         this.canvas.height = rect.height;
-        this.draw();
+        this.markDirty();
     }
     
     setupEventListeners() {
@@ -534,13 +546,17 @@ class InfiniteCanvas {
         };
 
         this.nodes.push(node);
+        this.addNodeToGrid(node); // Add to spatial grid
         this.saveToLocalStorage();
-        this.draw();
+        this.markDirty();
         return node;
     }
     
     // Drawing functions
     draw() {
+        // Skip drawing if not dirty and using throttling
+        if (!this.isDirty && this.renderThrottleId) return;
+
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
         this.ctx.save();
@@ -550,11 +566,18 @@ class InfiniteCanvas {
         // Draw grid using imported function
         drawGrid(this.ctx, this.offsetX, this.offsetY, this.scale, this.canvas.width, this.canvas.height);
 
-        // Draw connections first (behind nodes) using imported function
-        this.connections.forEach(connection => drawConnection(this.ctx, connection, this.nodes));
+        // Update visible nodes for viewport culling
+        this.updateVisibleNodes();
 
-        // Draw all nodes using imported function
-        this.nodes.forEach(node => drawNode(this.ctx, node));
+        // Draw connections first (behind nodes) - only for visible nodes
+        const visibleNodeIds = new Set(Array.from(this.visibleNodes).map(n => n.id));
+        const visibleConnections = this.connections.filter(connection =>
+            visibleNodeIds.has(connection.from) || visibleNodeIds.has(connection.to)
+        );
+        visibleConnections.forEach(connection => drawConnection(this.ctx, connection, this.nodes));
+
+        // Draw only visible nodes using imported function
+        this.visibleNodes.forEach(node => drawNode(this.ctx, node));
 
         // Draw connection preview if connecting using imported function
         if (this.isConnecting && this.connectionStart) {
@@ -570,6 +593,9 @@ class InfiniteCanvas {
 
         // Update tooltip position after drawing
         this.updateGenerateIdeasTooltip();
+
+        // Mark as clean
+        this.isDirty = false;
     }
     
     
@@ -758,13 +784,13 @@ class InfiniteCanvas {
         if (this.isSelecting) {
             // Update selection rectangle
             this.selectionEnd = { x: canvasX, y: canvasY };
-            this.draw();
+            this.markDirty();
             return;
         }
 
         if (this.isConnecting) {
             // Redraw to show connection preview
-            this.draw();
+            this.markDirty();
             return;
         }
 
@@ -836,15 +862,15 @@ class InfiniteCanvas {
 
             this.dragStartX = mouseX;
             this.dragStartY = mouseY;
-            this.draw();
+            this.markDirty();
             return;
         }
-        
+
         if (!this.isDragging) return;
-        
+
         const deltaX = mouseX - this.dragStartX;
         const deltaY = mouseY - this.dragStartY;
-        
+
         if (this.dragTarget === 'canvas') {
             // Pan canvas
             this.offsetX += deltaX;
@@ -856,17 +882,22 @@ class InfiniteCanvas {
             this.selectedNodes.forEach(node => {
                 node.x += scaledDeltaX;
                 node.y += scaledDeltaY;
+                // Update spatial grid for moved nodes
+                this.removeNodeFromGrid(node);
+                this.addNodeToGrid(node);
             });
         } else if (this.dragTarget && typeof this.dragTarget === 'object') {
             // Drag single node
+            this.removeNodeFromGrid(this.dragTarget);
             this.dragTarget.x += deltaX / this.scale;
             this.dragTarget.y += deltaY / this.scale;
+            this.addNodeToGrid(this.dragTarget);
         }
-        
+
         this.dragStartX = mouseX;
         this.dragStartY = mouseY;
-        
-        this.draw();
+
+        this.markDirty();
     }
     
     onMouseUp(e) {
@@ -897,7 +928,7 @@ class InfiniteCanvas {
             }
 
             this.canvas.style.cursor = 'grab';
-            this.draw();
+            this.markDirty();
             return;
         }
 
@@ -920,7 +951,7 @@ class InfiniteCanvas {
             this.isConnecting = false;
             this.connectionStart = null;
             this.canvas.style.cursor = 'grab';
-            this.draw();
+            this.markDirty();
             return;
         }
 
@@ -973,7 +1004,7 @@ class InfiniteCanvas {
             this.offsetX += (afterZoomX - beforeZoomX) * this.scale;
             this.offsetY += (afterZoomY - beforeZoomY) * this.scale;
 
-            this.draw();
+            this.markDirty();
             return;
         }
 
@@ -983,7 +1014,7 @@ class InfiniteCanvas {
             const panSensitivity = 1.0;
             this.offsetX -= e.deltaX * panSensitivity;
             this.offsetY -= e.deltaY * panSensitivity;
-            this.draw();
+            this.markDirty();
             return;
         }
 
@@ -1003,7 +1034,7 @@ class InfiniteCanvas {
         this.offsetX += (afterZoomX - beforeZoomX) * this.scale;
         this.offsetY += (afterZoomY - beforeZoomY) * this.scale;
 
-        this.draw();
+        this.markDirty();
     }
     
     onDoubleClick(e) {
@@ -1031,6 +1062,12 @@ class InfiniteCanvas {
     
     // Node interaction
     getNodeAtPoint(x, y) {
+        // Use optimized spatial grid lookup if available, fallback to linear search
+        if (this.spatialGrid.size > 0) {
+            return this.getNodeAtPointOptimized(x, y);
+        }
+
+        // Fallback to linear search for small numbers of nodes
         for (let i = this.nodes.length - 1; i >= 0; i--) {
             const node = this.nodes[i];
             if (x >= node.x && x <= node.x + node.width &&
@@ -1134,7 +1171,120 @@ class InfiniteCanvas {
 
         return null;
     }
-    
+
+    // Performance optimization methods
+
+    // Spatial grid for fast collision detection
+    getGridKey(x, y) {
+        const gridX = Math.floor(x / this.gridSize);
+        const gridY = Math.floor(y / this.gridSize);
+        return `${gridX},${gridY}`;
+    }
+
+    // Add node to spatial grid
+    addNodeToGrid(node) {
+        // Calculate which grid cells this node occupies
+        const startX = Math.floor(node.x / this.gridSize);
+        const endX = Math.floor((node.x + node.width) / this.gridSize);
+        const startY = Math.floor(node.y / this.gridSize);
+        const endY = Math.floor((node.y + node.height) / this.gridSize);
+
+        for (let x = startX; x <= endX; x++) {
+            for (let y = startY; y <= endY; y++) {
+                const key = `${x},${y}`;
+                if (!this.spatialGrid.has(key)) {
+                    this.spatialGrid.set(key, new Set());
+                }
+                this.spatialGrid.get(key).add(node);
+            }
+        }
+    }
+
+    // Remove node from spatial grid
+    removeNodeFromGrid(node) {
+        for (const [key, nodes] of this.spatialGrid.entries()) {
+            nodes.delete(node);
+            if (nodes.size === 0) {
+                this.spatialGrid.delete(key);
+            }
+        }
+    }
+
+    // Rebuild spatial grid (call when nodes change significantly)
+    rebuildSpatialGrid() {
+        this.spatialGrid.clear();
+        this.nodes.forEach(node => this.addNodeToGrid(node));
+    }
+
+    // Fast node lookup using spatial grid
+    getNodeAtPointOptimized(x, y) {
+        const key = this.getGridKey(x, y);
+        const candidates = this.spatialGrid.get(key);
+
+        if (!candidates) return null;
+
+        // Check candidates in reverse order (top nodes first)
+        const candidateArray = Array.from(candidates);
+        for (let i = candidateArray.length - 1; i >= 0; i--) {
+            const node = candidateArray[i];
+            if (x >= node.x && x <= node.x + node.width &&
+                y >= node.y && y <= node.y + node.height) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    // Calculate viewport bounds in canvas coordinates
+    getViewportBounds() {
+        const left = -this.offsetX / this.scale;
+        const top = -this.offsetY / this.scale;
+        const right = left + this.canvas.width / this.scale;
+        const bottom = top + this.canvas.height / this.scale;
+
+        return { left, top, right, bottom };
+    }
+
+    // Check if node is visible in current viewport
+    isNodeVisible(node, viewport) {
+        return !(node.x + node.width < viewport.left ||
+                node.x > viewport.right ||
+                node.y + node.height < viewport.top ||
+                node.y > viewport.bottom);
+    }
+
+    // Update visible nodes cache
+    updateVisibleNodes() {
+        const viewport = this.getViewportBounds();
+        this.visibleNodes.clear();
+
+        this.nodes.forEach(node => {
+            if (this.isNodeVisible(node, viewport)) {
+                this.visibleNodes.add(node);
+            }
+        });
+    }
+
+    // Throttled render function
+    requestRender() {
+        if (this.renderThrottleId) return;
+
+        this.renderThrottleId = requestAnimationFrame(() => {
+            const now = performance.now();
+            if (now - this.lastRenderTime >= this.frameTime) {
+                this.draw();
+                this.lastRenderTime = now;
+            }
+            this.renderThrottleId = null;
+        });
+    }
+
+    // Mark canvas as dirty and request render
+    markDirty() {
+        this.isDirty = true;
+        this.requestRender();
+    }
+
     // Selection management methods
     selectNodes(nodes) {
         this.clearSelection();
@@ -1149,7 +1299,7 @@ class InfiniteCanvas {
             nodes.isSelected = true;
             this.selectedNodes.push(nodes);
         }
-        this.draw();
+        this.markDirty();
         this.updateGenerateIdeasTooltip();
         this.updateSelectionStatus();
     }
@@ -1162,7 +1312,7 @@ class InfiniteCanvas {
         if (node && !this.selectedNodes.includes(node)) {
             node.isSelected = true;
             this.selectedNodes.push(node);
-            this.draw();
+            this.markDirty();
             this.updateGenerateIdeasTooltip();
             this.updateSelectionStatus();
         }
@@ -1175,7 +1325,7 @@ class InfiniteCanvas {
             if (index > -1) {
                 this.selectedNodes.splice(index, 1);
             }
-            this.draw();
+            this.markDirty();
             this.updateGenerateIdeasTooltip();
             this.updateSelectionStatus();
         }
@@ -1184,7 +1334,7 @@ class InfiniteCanvas {
     clearSelection() {
         this.nodes.forEach(n => n.isSelected = false);
         this.selectedNodes = [];
-        this.draw();
+        this.markDirty();
         this.updateGenerateIdeasTooltip();
         this.updateSelectionStatus();
     }
@@ -1326,7 +1476,7 @@ class InfiniteCanvas {
             this.editInput = null;
             this.editingNode = null;
             this.saveToLocalStorage();
-            this.draw();
+            this.markDirty();
         }
     }
     
@@ -1345,15 +1495,15 @@ class InfiniteCanvas {
         
         this.offsetX += (afterZoomX - beforeZoomX) * this.scale;
         this.offsetY += (afterZoomY - beforeZoomY) * this.scale;
-        
-        this.draw();
+
+        this.markDirty();
     }
-    
+
     resetView() {
         this.offsetX = 0;
         this.offsetY = 0;
         this.scale = 1.0;
-        this.draw();
+        this.markDirty();
     }
     
     // Enhanced AI functionality with parallel processing and real-time responses
@@ -1449,7 +1599,7 @@ class InfiniteCanvas {
                     });
 
                     // Update the canvas immediately to show the new node
-                    this.draw();
+                    this.markDirty();
                     this.saveToLocalStorage();
 
                     // Show immediate feedback for this model
@@ -1530,6 +1680,9 @@ class InfiniteCanvas {
                 this.offsetX = data.offsetX || 0;
                 this.offsetY = data.offsetY || 0;
                 this.scale = data.scale || 1.0;
+
+                // Rebuild spatial grid for performance
+                this.rebuildSpatialGrid();
             } catch (e) {
                 console.error('Error loading from localStorage:', e);
             }
@@ -1730,9 +1883,12 @@ class InfiniteCanvas {
             // Validate and fix connection data
             this.validateAndFixConnections();
 
+            // Rebuild spatial grid for performance
+            this.rebuildSpatialGrid();
+
             // Save to localStorage and redraw
             this.saveToLocalStorage();
-            this.draw();
+            this.markDirty();
             this.updateUndoRedoButtons();
 
             // Show success message
@@ -1878,6 +2034,9 @@ class InfiniteCanvas {
         // Get IDs of nodes to delete
         const nodeIdsToDelete = new Set(this.selectedNodes.map(node => node.id));
 
+        // Remove nodes from spatial grid first
+        this.selectedNodes.forEach(node => this.removeNodeFromGrid(node));
+
         // Remove the nodes
         this.nodes = this.nodes.filter(node => !nodeIdsToDelete.has(node.id));
 
@@ -1890,7 +2049,7 @@ class InfiniteCanvas {
         this.clearSelection();
 
         this.saveToLocalStorage();
-        this.draw();
+        this.markDirty();
     }
 
     // Delete single node and its connections (backward compatibility)
@@ -1900,6 +2059,9 @@ class InfiniteCanvas {
 
         // Save state for undo
         this.saveState();
+
+        // Remove node from spatial grid
+        this.removeNodeFromGrid(node);
 
         // Remove the node
         this.nodes.splice(nodeIndex, 1);
@@ -1913,7 +2075,7 @@ class InfiniteCanvas {
         this.clearSelection();
 
         this.saveToLocalStorage();
-        this.draw();
+        this.markDirty();
     }
     
     // History management
@@ -1958,9 +2120,10 @@ class InfiniteCanvas {
     restoreState(state) {
         this.nodes = JSON.parse(JSON.stringify(state.nodes));
         this.connections = JSON.parse(JSON.stringify(state.connections));
+        this.rebuildSpatialGrid(); // Rebuild spatial grid after state restore
         this.clearSelection();
         this.saveToLocalStorage();
-        this.draw();
+        this.markDirty();
         this.updateUndoRedoButtons();
     }
     
