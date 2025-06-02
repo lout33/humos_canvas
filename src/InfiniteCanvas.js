@@ -40,6 +40,8 @@ class InfiniteCanvas {
         this.isSelecting = false; // True when drawing selection rectangle
         this.selectionStart = { x: 0, y: 0 }; // Start point of selection rectangle
         this.selectionEnd = { x: 0, y: 0 }; // End point of selection rectangle
+        this.isPanning = false; // True when panning the canvas
+        this.spacePressed = false; // True when space key is held down
         
         // Node editing
         this.editingNode = null;
@@ -330,7 +332,8 @@ class InfiniteCanvas {
         
         // Keyboard events
         document.addEventListener('keydown', (e) => this.onKeyDown(e));
-        
+        document.addEventListener('keyup', (e) => this.onKeyUp(e));
+
         // Canvas mouse events
         this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
         this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
@@ -412,6 +415,20 @@ class InfiniteCanvas {
         const canvasX = (mouseX - this.offsetX) / this.scale;
         const canvasY = (mouseY - this.offsetY) / this.scale;
 
+        // Handle right mouse button or space+left click for panning
+        if (e.button === 2 || (e.button === 0 && this.spacePressed)) {
+            this.isPanning = true;
+            this.isDragging = true;
+            this.dragStartX = mouseX;
+            this.dragStartY = mouseY;
+            this.dragTarget = 'canvas';
+            this.canvas.style.cursor = 'grabbing';
+            return;
+        }
+
+        // Only handle left mouse button for selection and node interaction
+        if (e.button !== 0) return;
+
         // Check if clicking on a node
         const clickedNode = this.getNodeAtPoint(canvasX, canvasY);
 
@@ -470,16 +487,17 @@ class InfiniteCanvas {
                 }
             }
         } else {
-            // Clicked on empty space - start selection rectangle or clear selection
+            // Clicked on empty space with left mouse button
             if (!(e.ctrlKey || e.metaKey)) {
                 this.clearSelection();
             }
 
-            // Start selection rectangle
-            this.isSelecting = true;
-            this.selectionStart = { x: canvasX, y: canvasY };
-            this.selectionEnd = { x: canvasX, y: canvasY };
-            this.dragTarget = 'canvas';
+            // Start selection rectangle (only for left mouse button, not when space is pressed)
+            if (!this.spacePressed) {
+                this.isSelecting = true;
+                this.selectionStart = { x: canvasX, y: canvasY };
+                this.selectionEnd = { x: canvasX, y: canvasY };
+            }
         }
 
         if (!this.isConnecting && !this.isResizing && !this.isSelecting) {
@@ -538,25 +556,30 @@ class InfiniteCanvas {
         
         // Update cursor based on hover state
         if (!this.isDragging && !this.isConnecting && !this.isResizing) {
-            const hoveredNode = this.getNodeAtPoint(canvasX, canvasY);
-            if (hoveredNode) {
-                // Check for border-based resize first (works on any node)
-                const borderResizeHandle = this.getBorderResizeHandle(hoveredNode, canvasX, canvasY);
-                if (borderResizeHandle) {
-                    this.setCursorForResize(borderResizeHandle);
-                } else if (hoveredNode.isSelected) {
-                    // Check for traditional resize handles on selected nodes
-                    const resizeHandle = this.getResizeHandle(hoveredNode, canvasX, canvasY);
-                    if (resizeHandle) {
-                        this.setCursorForResize(resizeHandle);
+            if (this.spacePressed) {
+                // Space is pressed - show grab cursor for panning
+                this.canvas.style.cursor = 'grab';
+            } else {
+                const hoveredNode = this.getNodeAtPoint(canvasX, canvasY);
+                if (hoveredNode) {
+                    // Check for border-based resize first (works on any node)
+                    const borderResizeHandle = this.getBorderResizeHandle(hoveredNode, canvasX, canvasY);
+                    if (borderResizeHandle) {
+                        this.setCursorForResize(borderResizeHandle);
+                    } else if (hoveredNode.isSelected) {
+                        // Check for traditional resize handles on selected nodes
+                        const resizeHandle = this.getResizeHandle(hoveredNode, canvasX, canvasY);
+                        if (resizeHandle) {
+                            this.setCursorForResize(resizeHandle);
+                        } else {
+                            this.canvas.style.cursor = 'grab';
+                        }
                     } else {
                         this.canvas.style.cursor = 'grab';
                     }
                 } else {
-                    this.canvas.style.cursor = 'grab';
+                    this.canvas.style.cursor = 'default';
                 }
-            } else {
-                this.canvas.style.cursor = 'grab';
             }
         }
         
@@ -740,8 +763,9 @@ class InfiniteCanvas {
         }
 
         this.isDragging = false;
+        this.isPanning = false;
         this.dragTarget = null;
-        this.canvas.style.cursor = 'grab';
+        this.canvas.style.cursor = this.spacePressed ? 'grab' : 'default';
 
         if (this.dragTarget !== 'canvas') {
             this.saveToLocalStorage();
@@ -1514,7 +1538,21 @@ class InfiniteCanvas {
 
     // Keyboard event handler
     onKeyDown(e) {
-        // Don't handle keyboard events when editing text
+        // Handle space key for panning mode
+        if (e.key === ' ' && !this.spacePressed) {
+            // Don't handle space when editing text
+            if (this.editingNode || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
+                return;
+            }
+            e.preventDefault();
+            this.spacePressed = true;
+            if (!this.isDragging) {
+                this.canvas.style.cursor = 'grab';
+            }
+            return;
+        }
+
+        // Don't handle other keyboard events when editing text
         if (this.editingNode || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
             return;
         }
@@ -1547,6 +1585,16 @@ class InfiniteCanvas {
                     this.redo();
                 }
                 break;
+        }
+    }
+
+    onKeyUp(e) {
+        // Handle space key release
+        if (e.key === ' ') {
+            this.spacePressed = false;
+            if (!this.isDragging) {
+                this.canvas.style.cursor = 'default';
+            }
         }
     }
     
