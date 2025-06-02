@@ -11,59 +11,105 @@ export function getProviderName(baseURL) {
 }
 
 export async function generateAIIdeas(apiKey, baseURL, selectedNodeText) {
+    // Validate inputs
+    if (!apiKey || apiKey.trim() === '') {
+        throw new Error('API key is required');
+    }
+
+    if (!baseURL || baseURL.trim() === '') {
+        throw new Error('Base URL is required');
+    }
+
+    // Check for common API key/provider mismatches
+    if (baseURL.includes('openrouter.ai') && apiKey.startsWith('sk-proj-')) {
+        throw new Error('You are using an OpenAI API key with OpenRouter. Please either:\n1. Change Base URL to: https://api.openai.com/v1\n2. Or get an OpenRouter API key from openrouter.ai');
+    }
+
+    if (baseURL.includes('api.openai.com') && apiKey.startsWith('sk-or-')) {
+        throw new Error('You are using an OpenRouter API key with OpenAI. Please either:\n1. Change Base URL to: https://openrouter.ai/api/v1\n2. Or use your OpenAI API key instead');
+    }
+
+    // Determine the appropriate model based on provider
+    let model = "gpt-3.5-turbo"; // Default for OpenAI
+    let extraHeaders = {};
+
+    if (baseURL.includes('openrouter.ai')) {
+        model = "openai/gpt-4o-mini"; // Use a reliable OpenRouter model
+        extraHeaders = {
+            "HTTP-Referer": window.location.origin,
+            "X-Title": "Infinite Canvas AI"
+        };
+    }
+
+    console.log('🤖 AI API Call - Model:', model, 'Provider:', getProviderName(baseURL));
+
     // Create OpenAI client
-    const openaiClient = new OpenAI({ 
+    const openaiClient = new OpenAI({
         apiKey: apiKey,
         baseURL: baseURL,
-        dangerouslyAllowBrowser: true 
+        dangerouslyAllowBrowser: true,
+        defaultHeaders: extraHeaders
     });
-    
+
     // Construct prompt for AI
     const prompt = `The central idea is: "${selectedNodeText}". Generate 3-5 related concepts or sub-topics that could branch off from this central idea. Present each concept on a new line. Be concise and focused. Each concept should be a clear, actionable idea that expands on or relates to the central concept.`;
-    
-    console.log('Calling AI API with prompt:', prompt);
-    
+
     // Call AI API
-    const completion = await openaiClient.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 200,
-        temperature: 0.7
-    });
-    
-    const ideasText = completion.choices[0].message.content;
-    console.log('AI response:', ideasText);
-    
-    // Parse ideas from response
-    const ideas = ideasText.split('\n')
-        .map(line => line.trim())
-        .filter(line => line && !line.match(/^\d+\.?\s*$/)) // Remove empty lines and numbers
-        .map(line => line.replace(/^\d+\.?\s*/, '').replace(/^-\s*/, '')) // Remove numbering and bullets
-        .slice(0, 5); // Limit to 5 ideas
-    
-    if (ideas.length === 0) {
-        throw new Error('No valid ideas generated');
+    try {
+
+        const completion = await openaiClient.chat.completions.create({
+            model: model,
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 200,
+            temperature: 0.7
+        });
+
+        const ideasText = completion.choices[0].message.content;
+        console.log('✅ AI generated ideas:', ideasText);
+
+        // Parse ideas from response
+        const ideas = ideasText.split('\n')
+            .map(line => line.trim())
+            .filter(line => line && !line.match(/^\d+\.?\s*$/)) // Remove empty lines and numbers
+            .map(line => line.replace(/^\d+\.?\s*/, '').replace(/^-\s*/, '')) // Remove numbering and bullets
+            .slice(0, 5); // Limit to 5 ideas
+
+        if (ideas.length === 0) {
+            throw new Error('No valid ideas generated');
+        }
+
+        return ideas;
+    } catch (apiError) {
+        console.error('❌ AI API Error:', apiError.message);
+
+        // Re-throw the error to be handled by the calling function
+        throw apiError;
     }
-    
-    return ideas;
 }
 
 export function getErrorMessage(error) {
     let errorMessage = 'Failed to generate AI ideas. ';
-    
-    if (error.message.includes('API key')) {
+
+    // Check for specific error patterns
+    const errorString = error.message || JSON.stringify(error) || '';
+
+    if (errorString.includes('No auth credentials found') || errorString.includes('401')) {
+        errorMessage += 'Authentication failed. Please check your API key and make sure it\'s valid for the selected provider.';
+    } else if (errorString.includes('API key')) {
         errorMessage += 'Please check your API key.';
-    } else if (error.message.includes('quota')) {
+    } else if (errorString.includes('quota') || errorString.includes('insufficient_quota')) {
         errorMessage += 'API quota exceeded.';
-    } else if (error.message.includes('network') || error.message.includes('fetch')) {
+    } else if (errorString.includes('network') || errorString.includes('fetch')) {
         errorMessage += 'Network error. Please try again.';
-    } else if (error.message.includes('401') || error.message.includes('unauthorized')) {
+    } else if (errorString.includes('unauthorized')) {
         errorMessage += 'Invalid API key or unauthorized access.';
-    } else if (error.message.includes('429') || error.message.includes('rate limit')) {
+    } else if (errorString.includes('429') || errorString.includes('rate limit')) {
         errorMessage += 'Rate limit exceeded. Please wait and try again.';
+    } else if (errorString.includes('model') && errorString.includes('not found')) {
+        errorMessage += 'The requested model is not available. Please try a different model.';
     } else {
-        errorMessage += error.message || 'Unknown error occurred.';
+        errorMessage += errorString || 'Unknown error occurred.';
     }
-    
+
     return errorMessage;
 }

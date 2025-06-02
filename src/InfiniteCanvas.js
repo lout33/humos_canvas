@@ -111,8 +111,8 @@ class InfiniteCanvas {
             });
         }
         
-        // Update generate AI button text based on API key availability
-        this.updateGenerateAIButton();
+        // Update API configuration button text based on API key availability
+        this.updateApiConfigButton();
     }
     
     showApiKeyModal() {
@@ -158,24 +158,54 @@ class InfiniteCanvas {
         localStorage.setItem('ai_api_key', apiKey);
         localStorage.setItem('ai_base_url', baseURL);
         
-        
+
         this.hideApiKeyModal();
-        this.updateGenerateAIButton();
-        
+        this.updateApiConfigButton();
+
         // Show success message with provider info
         const provider = getProviderName(baseURL);
         this.showNotification(`${provider} configuration saved successfully!`, 'success');
     }
     
-    updateGenerateAIButton() {
-        const btn = document.getElementById('generateAIBtn');
+    updateApiConfigButton() {
+        const btn = document.getElementById('configureApiBtn');
         if (this.apiKey) {
             const provider = getProviderName(this.baseURL);
-            btn.textContent = `🤖 Generate AI Ideas`;
-            btn.title = `Generate AI ideas using ${provider}`;
+            btn.textContent = `🔑 ${provider} Configured`;
+            btn.title = `API configured for ${provider}. Click to change settings.`;
+            btn.style.background = '#28a745'; // Green when configured
         } else {
-            btn.textContent = '🔑 Configure AI API';
+            btn.textContent = '🔑 Configure API Keys';
             btn.title = 'Configure AI API settings to enable AI features';
+            btn.style.background = '#dc3545'; // Red when not configured
+        }
+    }
+
+    updateGenerateIdeasTooltip() {
+        const tooltip = document.getElementById('generateIdeasTooltip');
+        const btn = document.getElementById('generateIdeasBtn');
+
+        if (this.selectedNode && this.apiKey) {
+            // Position tooltip above the selected node
+            const rect = this.canvas.getBoundingClientRect();
+            const nodeScreenX = rect.left + (this.selectedNode.x * this.scale) + this.offsetX;
+            const nodeScreenY = rect.top + (this.selectedNode.y * this.scale) + this.offsetY;
+
+            // Position tooltip above the node with some padding
+            const tooltipX = nodeScreenX + (this.selectedNode.width * this.scale) / 2;
+            const tooltipY = nodeScreenY - 50; // 50px above the node
+
+            tooltip.style.left = `${tooltipX}px`;
+            tooltip.style.top = `${tooltipY}px`;
+            tooltip.style.transform = 'translateX(-50%)'; // Center horizontally
+
+            tooltip.classList.remove('hidden');
+
+            // Update button state
+            btn.disabled = this.isGeneratingAI;
+            btn.textContent = this.isGeneratingAI ? '⏳ Generating...' : '🤖 Generate Ideas';
+        } else {
+            tooltip.classList.add('hidden');
         }
     }
     
@@ -209,9 +239,14 @@ class InfiniteCanvas {
     setupEventListeners() {
         // Toolbar buttons
         document.getElementById('addNodeBtn').addEventListener('click', () => this.createNode());
-        document.getElementById('generateAIBtn').addEventListener('click', () => this.generateAI());
         document.getElementById('exportBtn').addEventListener('click', () => this.exportJSON());
-        
+
+        // API Configuration button
+        document.getElementById('configureApiBtn').addEventListener('click', () => this.showApiKeyModal());
+
+        // Generate Ideas tooltip button
+        document.getElementById('generateIdeasBtn').addEventListener('click', () => this.generateAI());
+
         // Canvas controls
         document.getElementById('zoomInBtn').addEventListener('click', () => this.zoom(1.2));
         document.getElementById('zoomOutBtn').addEventListener('click', () => this.zoom(0.8));
@@ -275,8 +310,11 @@ class InfiniteCanvas {
         if (this.isConnecting && this.connectionStart) {
             drawConnectionPreview(this.ctx, this.connectionStart, this.lastMouseX || 0, this.lastMouseY || 0, this.offsetX, this.offsetY, this.scale);
         }
-        
+
         this.ctx.restore();
+
+        // Update tooltip position after drawing
+        this.updateGenerateIdeasTooltip();
     }
     
     
@@ -571,6 +609,7 @@ class InfiniteCanvas {
             this.selectedNode = null;
         }
         this.draw();
+        this.updateGenerateIdeasTooltip();
     }
     
     createConnection(fromNode, toNode) {
@@ -686,28 +725,27 @@ class InfiniteCanvas {
             this.showApiKeyModal();
             return;
         }
-        
+
         // Check if a node is selected
         if (!this.selectedNode) {
             this.showNotification('Please select a node first to generate connected ideas', 'warning');
             return;
         }
-        
+
         // Prevent multiple simultaneous requests
         if (this.isGeneratingAI) {
             this.showNotification('AI generation already in progress...', 'info');
             return;
         }
-        
+
         try {
             this.isGeneratingAI = true;
-            
-            // Update button to show loading state
-            const btn = document.getElementById('generateAIBtn');
-            const originalText = btn.textContent;
-            btn.textContent = '⏳ Generating...';
-            btn.disabled = true;
-            
+
+            // Update tooltip button to show loading state
+            this.updateGenerateIdeasTooltip();
+
+            console.log('🎯 Generating ideas for:', this.selectedNode.text);
+
             // Call the AI service to generate ideas
             const ideas = await generateAIIdeas(this.apiKey, this.baseURL, this.selectedNode.text);
             
@@ -716,18 +754,24 @@ class InfiniteCanvas {
             
             // Create nodes for each idea
             const sourceNode = this.selectedNode;
+
+            // Safety check: make sure we still have a selected node
+            if (!sourceNode) {
+                throw new Error('Selected node was lost during AI generation');
+            }
+
             const createdNodes = [];
-            
+
             ideas.forEach((idea, index) => {
                 // Position new nodes in a circular pattern around the source node
                 const angle = (index / ideas.length) * 2 * Math.PI;
                 const radius = 180;
                 const x = sourceNode.x + sourceNode.width/2 + Math.cos(angle) * radius - 60;
                 const y = sourceNode.y + sourceNode.height/2 + Math.sin(angle) * radius - 30;
-                
+
                 const newNode = this.createNode(idea, x, y);
                 createdNodes.push(newNode);
-                
+
                 // Create connection from source to new node
                 this.createConnection(sourceNode, newNode);
             });
@@ -741,11 +785,9 @@ class InfiniteCanvas {
             this.showNotification(errorMessage, 'error');
         } finally {
             this.isGeneratingAI = false;
-            
-            // Restore button state
-            const btn = document.getElementById('generateAIBtn');
-            btn.textContent = this.apiKey ? '🤖 Generate AI Ideas' : '🔑 Configure AI API';
-            btn.disabled = false;
+
+            // Restore tooltip button state
+            this.updateGenerateIdeasTooltip();
         }
     }
     

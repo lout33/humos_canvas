@@ -11,11 +11,20 @@
         <!-- Canvas element for drawing -->
         <canvas id="canvas"></canvas>
         
+        <!-- Configure API Keys button (always visible) -->
+        <div class="api-config-container">
+            <button id="configureApiBtn" class="api-config-btn">🔑 Configure API Keys</button>
+        </div>
+
         <!-- Floating toolbar -->
         <div class="floating-toolbar">
             <button id="addNodeBtn" class="toolbar-btn">Add Node</button>
-            <button id="generateAIBtn" class="toolbar-btn">Generate AI</button>
             <button id="exportBtn" class="toolbar-btn">Export JSON</button>
+        </div>
+
+        <!-- Generate Ideas tooltip (appears above selected nodes) -->
+        <div id="generateIdeasTooltip" class="generate-ideas-tooltip hidden">
+            <button id="generateIdeasBtn" class="generate-ideas-btn">🤖 Generate Ideas</button>
         </div>
         
         <!-- Canvas navigation controls -->
