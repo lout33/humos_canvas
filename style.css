@@ -32,34 +32,7 @@ body {
     cursor: grabbing;
 }
 
-/* API Configuration button (always visible) */
-.api-config-container {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    z-index: 1001;
-}
 
-.api-config-btn {
-    background: #dc3545;
-    color: #ffffff;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-.api-config-btn:hover {
-    background: #c82333;
-}
-
-.api-config-btn:active {
-    transform: translateY(1px);
-}
 
 /* Floating toolbar */
 .floating-toolbar {

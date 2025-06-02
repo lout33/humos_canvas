@@ -76,7 +76,6 @@ export async function generateAIIdeas(apiKey, baseURL, selectedNodeText, connect
         const completion = await openaiClient.chat.completions.create({
             model: model,
             messages: messages,
-            max_tokens: 200,
             temperature: 0.7
         });
 
