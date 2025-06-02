@@ -281,7 +281,7 @@ class InfiniteCanvas {
             text: text,
             x: x !== null ? x : this.canvas.width / 2 - this.offsetX,
             y: y !== null ? y : this.canvas.height / 2 - this.offsetY,
-            width: 120,
+            width: 400,
             height: 60,
             isSelected: false
         };
@@ -629,7 +629,7 @@ class InfiniteCanvas {
             this.startEditingNode(clickedNode);
         } else {
             // Double-click on empty space - create new node at that position
-            const newNode = this.createNode('New Node', canvasX - 60, canvasY - 30);
+            const newNode = this.createNode('New Node', canvasX - 100, canvasY - 30);
             // Immediately start editing the new node
             setTimeout(() => {
                 this.startEditingNode(newNode);
@@ -944,7 +944,7 @@ class InfiniteCanvas {
                 // Position new nodes in a circular pattern around the source node
                 const angle = (index / ideas.length) * 2 * Math.PI;
                 const radius = 180;
-                const x = sourceNode.x + sourceNode.width/2 + Math.cos(angle) * radius - 60;
+                const x = sourceNode.x + sourceNode.width/2 + Math.cos(angle) * radius - 100;
                 const y = sourceNode.y + sourceNode.height/2 + Math.sin(angle) * radius - 30;
 
                 const newNode = this.createNode(idea, x, y);
