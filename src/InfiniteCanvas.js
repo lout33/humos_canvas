@@ -4,15 +4,13 @@ import {
     drawGrid,
     drawNode,
     drawConnection,
-    drawConnectionPreview,
-    drawResizeHandles,
-    wrapText
+    drawConnectionPreview
 } from './canvasRenderer.js';
 
 import { calculateMarkdownHeight } from './markdownParser.js';
 
 import {
-    generateAIIdeas,
+    generateAIIdeasMultipleModels,
     getProviderName,
     getErrorMessage
 } from './aiService.js';
@@ -51,6 +49,7 @@ class InfiniteCanvas {
         // AI API integration (supports OpenRouter, local models, etc.)
         this.apiKey = localStorage.getItem('ai_api_key') || null;
         this.baseURL = localStorage.getItem('ai_base_url') || 'https://api.openai.com/v1';
+        this.aiModels = localStorage.getItem('ai_models') || 'gpt-3.5-turbo';
         this.isGeneratingAI = false;
         
         this.init();
@@ -79,13 +78,20 @@ class InfiniteCanvas {
                 <div class="modal-content">
                     <h3>AI API Configuration</h3>
                     <p>Configure your AI API settings. Supports OpenAI, OpenRouter, and other compatible APIs:</p>
-                    
+
                     <label for="baseUrlInput">Base URL:</label>
                     <input type="text" id="baseUrlInput" placeholder="https://api.openai.com/v1" />
-                    
+
                     <label for="apiKeyInput">API Key:</label>
                     <input type="password" id="apiKeyInput" placeholder="sk-... or or-..." />
-                    
+
+                    <label for="aiModelsInput">AI Models (comma-separated):</label>
+                    <input type="text" id="aiModelsInput" placeholder="gpt-3.5-turbo, deepseek/deepseek-r1-0528, x-ai/grok-3-mini-beta" />
+                    <small style="display: block; margin-bottom: 15px; color: #666;">
+                        Enter one or more model names separated by commas. When multiple models are specified,
+                        the "Generate Ideas" button will create one node for each model.
+                    </small>
+
                     <div class="modal-buttons">
                         <button id="saveApiKeyBtn">Save Configuration</button>
                         <button id="cancelApiKeyBtn">Cancel</button>
@@ -112,6 +118,10 @@ class InfiniteCanvas {
                 if (e.key === 'Enter') this.saveApiConfig();
                 if (e.key === 'Escape') this.hideApiKeyModal();
             });
+            document.getElementById('aiModelsInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') this.saveApiConfig();
+                if (e.key === 'Escape') this.hideApiKeyModal();
+            });
         }
         
         // Update API configuration button text based on API key availability
@@ -122,9 +132,11 @@ class InfiniteCanvas {
         const modal = document.getElementById('apiKeyModal');
         const apiKeyInput = document.getElementById('apiKeyInput');
         const baseUrlInput = document.getElementById('baseUrlInput');
+        const aiModelsInput = document.getElementById('aiModelsInput');
         modal.style.display = 'flex';
         apiKeyInput.value = this.apiKey || '';
         baseUrlInput.value = this.baseURL || 'https://api.openai.com/v1';
+        aiModelsInput.value = this.aiModels || 'gpt-3.5-turbo';
         baseUrlInput.focus();
     }
     
@@ -135,19 +147,26 @@ class InfiniteCanvas {
     saveApiConfig() {
         const apiKeyInput = document.getElementById('apiKeyInput');
         const baseUrlInput = document.getElementById('baseUrlInput');
+        const aiModelsInput = document.getElementById('aiModelsInput');
         const apiKey = apiKeyInput.value.trim();
         const baseURL = baseUrlInput.value.trim();
-        
+        const aiModels = aiModelsInput.value.trim();
+
         if (!apiKey) {
             this.showNotification('Please enter an API key', 'error');
             return;
         }
-        
+
         if (!baseURL) {
             this.showNotification('Please enter a base URL', 'error');
             return;
         }
-        
+
+        if (!aiModels) {
+            this.showNotification('Please enter at least one AI model', 'error');
+            return;
+        }
+
         // Validate URL format
         try {
             new URL(baseURL);
@@ -155,19 +174,22 @@ class InfiniteCanvas {
             this.showNotification('Please enter a valid URL', 'error');
             return;
         }
-        
+
         this.apiKey = apiKey;
         this.baseURL = baseURL;
+        this.aiModels = aiModels;
         localStorage.setItem('ai_api_key', apiKey);
         localStorage.setItem('ai_base_url', baseURL);
-        
+        localStorage.setItem('ai_models', aiModels);
+
 
         this.hideApiKeyModal();
         this.updateApiConfigButton();
 
         // Show success message with provider info
         const provider = getProviderName(baseURL);
-        this.showNotification(`${provider} configuration saved successfully!`, 'success');
+        const modelCount = aiModels.split(',').length;
+        this.showNotification(`${provider} configuration saved with ${modelCount} model(s)!`, 'success');
     }
     
     updateApiConfigButton() {
@@ -272,10 +294,10 @@ class InfiniteCanvas {
     }
     
     // Node creation and management
-    createNode(text = 'New Node', x = null, y = null) {
+    createNode(text = 'New Node', x = null, y = null, generatedByModel = null) {
         // Save state for undo before creating node
         this.saveState();
-        
+
         const node = {
             id: Date.now() + Math.random(),
             text: text,
@@ -283,9 +305,10 @@ class InfiniteCanvas {
             y: y !== null ? y : this.canvas.height / 2 - this.offsetY,
             width: 400,
             height: 60,
-            isSelected: false
+            isSelected: false,
+            generatedByModel: generatedByModel
         };
-        
+
         this.nodes.push(node);
         this.saveToLocalStorage();
         this.draw();
@@ -926,8 +949,12 @@ class InfiniteCanvas {
             const connectedNodes = this.getConnectedNodes(sourceNode);
             console.log('📎 Connected nodes as conversation history:', connectedNodes.map(n => n.text));
 
-            // Call the AI service to generate ideas with context
-            const ideas = await generateAIIdeas(this.apiKey, this.baseURL, sourceNode.text, connectedNodes);
+            // Parse models from configuration
+            const models = this.aiModels.split(',').map(m => m.trim()).filter(m => m.length > 0);
+            console.log('🎯 Using models:', models);
+
+            // Call the AI service to generate ideas with multiple models
+            const modelResults = await generateAIIdeasMultipleModels(this.apiKey, this.baseURL, sourceNode.text, connectedNodes, models);
 
             // Save state for undo
             this.saveState();
@@ -939,24 +966,30 @@ class InfiniteCanvas {
             }
 
             const createdNodes = [];
+            let totalNodes = 0;
 
-            ideas.forEach((idea, index) => {
-                // Position new nodes in a circular pattern around the source node
-                const angle = (index / ideas.length) * 2 * Math.PI;
-                const radius = 180;
-                const x = sourceNode.x + sourceNode.width/2 + Math.cos(angle) * radius - 100;
-                const y = sourceNode.y + sourceNode.height/2 + Math.sin(angle) * radius - 30;
+            // Process results from each model
+            modelResults.forEach((modelResult) => {
+                modelResult.ideas.forEach((idea) => {
+                    // Position new nodes in a circular pattern around the source node
+                    const angle = (totalNodes / modelResults.reduce((sum, mr) => sum + mr.ideas.length, 0)) * 2 * Math.PI;
+                    const radius = 180;
+                    const x = sourceNode.x + sourceNode.width/2 + Math.cos(angle) * radius - 100;
+                    const y = sourceNode.y + sourceNode.height/2 + Math.sin(angle) * radius - 30;
 
-                const newNode = this.createNode(idea, x, y);
-                createdNodes.push(newNode);
+                    const newNode = this.createNode(idea, x, y, modelResult.model);
+                    createdNodes.push(newNode);
 
-                // Create connection from source to new node
-                this.createConnection(sourceNode, newNode);
+                    // Create connection from source to new node
+                    this.createConnection(sourceNode, newNode);
+
+                    totalNodes++;
+                });
             });
-            
-            const message = ideas.length === 1
+
+            const message = totalNodes === 1
                 ? `Generated 1 AI idea and connected it!`
-                : `Generated ${ideas.length} AI ideas and connected them!`;
+                : `Generated ${totalNodes} AI ideas from ${modelResults.length} model(s) and connected them!`;
             this.showNotification(message, 'success');
             
         } catch (error) {

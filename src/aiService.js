@@ -10,7 +10,7 @@ export function getProviderName(baseURL) {
     return 'Custom API';
 }
 
-export async function generateAIIdeas(apiKey, baseURL, selectedNodeText, connectedNodes = []) {
+export async function generateAIIdeas(apiKey, baseURL, selectedNodeText, connectedNodes = [], model = null) {
     // Validate inputs
     if (!apiKey || apiKey.trim() === '') {
         throw new Error('API key is required');
@@ -29,12 +29,17 @@ export async function generateAIIdeas(apiKey, baseURL, selectedNodeText, connect
         throw new Error('You are using an OpenRouter API key with OpenAI. Please either:\n1. Change Base URL to: https://openrouter.ai/api/v1\n2. Or use your OpenAI API key instead');
     }
 
-    // Determine the appropriate model based on provider
-    let model = "gpt-3.5-turbo"; // Default for OpenAI
-    let extraHeaders = {};
+    // Use provided model or determine the appropriate model based on provider
+    let finalModel = model;
+    if (!finalModel) {
+        finalModel = "gpt-3.5-turbo"; // Default for OpenAI
+        if (baseURL.includes('openrouter.ai')) {
+            finalModel = "openai/gpt-4o-mini"; // Use a reliable OpenRouter model
+        }
+    }
 
+    let extraHeaders = {};
     if (baseURL.includes('openrouter.ai')) {
-        model = "openai/gpt-4o-mini"; // Use a reliable OpenRouter model
         extraHeaders = {
             "HTTP-Referer": window.location.origin,
             "X-Title": "Infinite Canvas AI"
@@ -67,14 +72,14 @@ export async function generateAIIdeas(apiKey, baseURL, selectedNodeText, connect
     // Add the current selected node as the latest message
     messages.push({ role: "user", content: selectedNodeText });
 
-    console.log('🤖 AI Call - Model:', model, 'Provider:', getProviderName(baseURL));
+    console.log('🤖 AI Call - Model:', finalModel, 'Provider:', getProviderName(baseURL));
     console.log('💬 Message history:', messages.map(m => m.content));
 
     // Call AI API
     try {
 
         const completion = await openaiClient.chat.completions.create({
-            model: model,
+            model: finalModel,
             messages: messages,
             temperature: 0.7
         });
@@ -123,4 +128,39 @@ export function getErrorMessage(error) {
     }
 
     return errorMessage;
+}
+
+export async function generateAIIdeasMultipleModels(apiKey, baseURL, selectedNodeText, connectedNodes = [], models = []) {
+    if (!models || models.length === 0) {
+        throw new Error('No models specified');
+    }
+
+    const results = [];
+
+    // Process models sequentially to avoid overwhelming the API
+    for (const model of models) {
+        const trimmedModel = model.trim();
+        if (!trimmedModel) continue;
+
+        try {
+            console.log(`🤖 Generating with model: ${trimmedModel}`);
+            const ideas = await generateAIIdeas(apiKey, baseURL, selectedNodeText, connectedNodes, trimmedModel);
+
+            // Add model attribution to each idea
+            results.push({
+                model: trimmedModel,
+                ideas: ideas
+            });
+        } catch (error) {
+            console.error(`❌ Error with model ${trimmedModel}:`, error.message);
+            // Continue with other models even if one fails
+            results.push({
+                model: trimmedModel,
+                ideas: [`Error with ${trimmedModel}: ${error.message}`],
+                error: true
+            });
+        }
+    }
+
+    return results;
 }
