@@ -80,11 +80,11 @@ export function drawNode(ctx, node) {
     const height = node.height;
 
     // Draw node background
-    ctx.fillStyle = isSelected ? '#e3f2fd' : '#ffffff';
+    ctx.fillStyle = isSelected ? '#2d3748' : '#1a202c';
     ctx.fillRect(x, y, width, height);
 
     // Draw node border
-    ctx.strokeStyle = isSelected ? '#2196f3' : '#ddd';
+    ctx.strokeStyle = isSelected ? '#4299e1' : '#4a5568';
     ctx.lineWidth = isSelected ? 2 : 1;
     ctx.strokeRect(x, y, width, height);
 

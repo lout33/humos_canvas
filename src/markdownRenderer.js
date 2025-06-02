@@ -55,7 +55,7 @@ function renderSimpleText(ctx, item, x, currentY, maxWidth, margins, lineHeight,
     // Set font properties
     const font = `${item.fontWeight} ${item.fontStyle} ${item.fontSize}px Arial`;
     ctx.font = font;
-    ctx.fillStyle = '#333';
+    ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
@@ -128,7 +128,7 @@ function renderInlineFormattedText(ctx, item, x, currentY, maxWidth, margins, li
 
         // Draw bullet point
         ctx.font = `${item.fontWeight} ${item.fontStyle} ${item.fontSize}px Arial`;
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = '#ffffff';
         ctx.fillText(item.bullet, bulletX, currentY);
     }
 
@@ -159,7 +159,7 @@ function renderInlineFormattedText(ctx, item, x, currentY, maxWidth, margins, li
 
         // Set font for the whole text block
         ctx.font = `${item.fontWeight} ${item.fontStyle} ${item.fontSize}px Arial`;
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = '#ffffff';
 
         lines.forEach(line => {
             if (currentY + lineHeight > maxY) return;
@@ -179,9 +179,9 @@ function setFontForSegment(ctx, segment, baseFontSize) {
     
     // Set color based on segment type
     if (segment.type === 'code') {
-        ctx.fillStyle = '#d63384'; // Code color
+        ctx.fillStyle = '#fbb6ce'; // Light pink code color for dark background
     } else {
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = '#ffffff';
     }
 }
 
