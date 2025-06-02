@@ -618,11 +618,11 @@ class InfiniteCanvas {
             conn => (conn.from === fromNode.id && conn.to === toNode.id) ||
                    (conn.from === toNode.id && conn.to === fromNode.id)
         );
-        
+
         if (!existingConnection) {
             // Save state for undo before creating connection
             this.saveState();
-            
+
             const connection = {
                 id: Date.now() + Math.random(),
                 from: fromNode.id,
@@ -632,6 +632,33 @@ class InfiniteCanvas {
             this.saveToLocalStorage();
             console.log('Created connection from', fromNode.text, 'to', toNode.text);
         }
+    }
+
+    // Get all nodes connected to the given node
+    getConnectedNodes(node) {
+        if (!node) return [];
+
+        const connectedNodes = [];
+
+        // Find all connections involving this node
+        this.connections.forEach(connection => {
+            let connectedNodeId = null;
+
+            if (connection.from === node.id) {
+                connectedNodeId = connection.to;
+            } else if (connection.to === node.id) {
+                connectedNodeId = connection.from;
+            }
+
+            if (connectedNodeId) {
+                const connectedNode = this.nodes.find(n => n.id === connectedNodeId);
+                if (connectedNode) {
+                    connectedNodes.push(connectedNode);
+                }
+            }
+        });
+
+        return connectedNodes;
     }
     
     startEditingNode(node) {
@@ -746,8 +773,12 @@ class InfiniteCanvas {
 
             console.log('🎯 Generating ideas for:', this.selectedNode.text);
 
-            // Call the AI service to generate ideas
-            const ideas = await generateAIIdeas(this.apiKey, this.baseURL, this.selectedNode.text);
+            // Get connected nodes for conversation history
+            const connectedNodes = this.getConnectedNodes(this.selectedNode);
+            console.log('📎 Connected nodes as conversation history:', connectedNodes.map(n => n.text));
+
+            // Call the AI service to generate ideas with context
+            const ideas = await generateAIIdeas(this.apiKey, this.baseURL, this.selectedNode.text, connectedNodes);
             
             // Save state for undo
             this.saveState();

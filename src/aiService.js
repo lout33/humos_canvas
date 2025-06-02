@@ -10,7 +10,7 @@ export function getProviderName(baseURL) {
     return 'Custom API';
 }
 
-export async function generateAIIdeas(apiKey, baseURL, selectedNodeText) {
+export async function generateAIIdeas(apiKey, baseURL, selectedNodeText, connectedNodes = []) {
     // Validate inputs
     if (!apiKey || apiKey.trim() === '') {
         throw new Error('API key is required');
@@ -51,17 +51,31 @@ export async function generateAIIdeas(apiKey, baseURL, selectedNodeText) {
         defaultHeaders: extraHeaders
     });
 
-    // Simple prompt - just pass the user's text directly
-    const prompt = selectedNodeText;
+    // Construct messages array with connected nodes as conversation history
+    let messages = [];
+
+    if (connectedNodes && connectedNodes.length > 0) {
+        // Add connected nodes as previous messages in the conversation
+        connectedNodes.forEach(node => {
+            messages.push({ role: "user", content: node.text });
+        });
+        console.log('📎 Using', connectedNodes.length, 'connected nodes as conversation history');
+    } else {
+        console.log('📝 No connected nodes, starting new conversation');
+    }
+
+    // Add the current selected node as the latest message
+    messages.push({ role: "user", content: selectedNodeText });
 
     console.log('🤖 AI Call - Model:', model, 'Provider:', getProviderName(baseURL));
+    console.log('💬 Message history:', messages.map(m => m.content));
 
     // Call AI API
     try {
 
         const completion = await openaiClient.chat.completions.create({
             model: model,
-            messages: [{ role: "user", content: prompt }],
+            messages: messages,
             max_tokens: 200,
             temperature: 0.7
         });
