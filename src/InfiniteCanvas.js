@@ -776,7 +776,10 @@ class InfiniteCanvas {
                 this.createConnection(sourceNode, newNode);
             });
             
-            this.showNotification(`Generated ${ideas.length} AI ideas and connected them!`, 'success');
+            const message = ideas.length === 1
+                ? `Generated 1 AI idea and connected it!`
+                : `Generated ${ideas.length} AI ideas and connected them!`;
+            this.showNotification(message, 'success');
             
         } catch (error) {
             console.error('Error calling AI API:', error);

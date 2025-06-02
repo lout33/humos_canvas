@@ -41,7 +41,7 @@ export async function generateAIIdeas(apiKey, baseURL, selectedNodeText) {
         };
     }
 
-    console.log('🤖 AI API Call - Model:', model, 'Provider:', getProviderName(baseURL));
+
 
     // Create OpenAI client
     const openaiClient = new OpenAI({
@@ -51,8 +51,10 @@ export async function generateAIIdeas(apiKey, baseURL, selectedNodeText) {
         defaultHeaders: extraHeaders
     });
 
-    // Construct prompt for AI
-    const prompt = `The central idea is: "${selectedNodeText}". Generate 3-5 related concepts or sub-topics that could branch off from this central idea. Present each concept on a new line. Be concise and focused. Each concept should be a clear, actionable idea that expands on or relates to the central concept.`;
+    // Simple prompt - just pass the user's text directly
+    const prompt = selectedNodeText;
+
+    console.log('🤖 AI Call - Model:', model, 'Provider:', getProviderName(baseURL));
 
     // Call AI API
     try {
@@ -64,21 +66,17 @@ export async function generateAIIdeas(apiKey, baseURL, selectedNodeText) {
             temperature: 0.7
         });
 
-        const ideasText = completion.choices[0].message.content;
-        console.log('✅ AI generated ideas:', ideasText);
+        const responseText = completion.choices[0].message.content;
+        console.log('✅ AI response:', responseText);
 
-        // Parse ideas from response
-        const ideas = ideasText.split('\n')
-            .map(line => line.trim())
-            .filter(line => line && !line.match(/^\d+\.?\s*$/)) // Remove empty lines and numbers
-            .map(line => line.replace(/^\d+\.?\s*/, '').replace(/^-\s*/, '')) // Remove numbering and bullets
-            .slice(0, 5); // Limit to 5 ideas
+        // Return the AI response as a single idea (one node)
+        const trimmedResponse = responseText.trim();
 
-        if (ideas.length === 0) {
-            throw new Error('No valid ideas generated');
+        if (!trimmedResponse) {
+            throw new Error('AI generated empty response');
         }
 
-        return ideas;
+        return [trimmedResponse]; // Always return as array with single item
     } catch (apiError) {
         console.error('❌ AI API Error:', apiError.message);
 
