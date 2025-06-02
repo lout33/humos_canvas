@@ -81,49 +81,79 @@ export function parseMarkdown(text) {
 // Process inline formatting like **bold**, *italic*, and `code`
 function processInlineFormatting(text) {
     const segments = [];
-    let currentIndex = 0;
-    
-    // Regex patterns for inline formatting
-    const patterns = [
-        { regex: /\*\*(.*?)\*\*/g, type: 'bold' },
-        { regex: /\*(.*?)\*/g, type: 'italic' },
-        { regex: /`(.*?)`/g, type: 'code' }
-    ];
-    
-    // Find all matches and their positions
-    const matches = [];
-    patterns.forEach(pattern => {
-        let match;
-        const regex = new RegExp(pattern.regex.source, 'g');
-        while ((match = regex.exec(text)) !== null) {
-            matches.push({
+
+    // Process formatting in order of precedence to avoid conflicts
+    // 1. Code blocks first (highest precedence)
+    // 2. Bold text (must come before italic to avoid conflicts)
+    // 3. Italic text (lowest precedence)
+
+    const formatRanges = [];
+
+    // Find code blocks first
+    let codeRegex = /`([^`]+)`/g;
+    let match;
+    while ((match = codeRegex.exec(text)) !== null) {
+        formatRanges.push({
+            start: match.index,
+            end: match.index + match[0].length,
+            content: match[1],
+            type: 'code'
+        });
+    }
+
+    // Find bold text (must come before italic)
+    let boldRegex = /\*\*([^*]+)\*\*/g;
+    while ((match = boldRegex.exec(text)) !== null) {
+        // Check if this range overlaps with any existing ranges
+        const overlaps = formatRanges.some(range =>
+            (match.index < range.end && match.index + match[0].length > range.start)
+        );
+        if (!overlaps) {
+            formatRanges.push({
                 start: match.index,
                 end: match.index + match[0].length,
                 content: match[1],
-                type: pattern.type,
-                fullMatch: match[0]
+                type: 'bold'
             });
         }
-    });
-    
-    // Sort matches by position
-    matches.sort((a, b) => a.start - b.start);
-    
-    // Process text with formatting
-    matches.forEach(match => {
-        // Add text before the match
-        if (currentIndex < match.start) {
-            const beforeText = text.slice(currentIndex, match.start);
+    }
+
+    // Find italic text (lowest precedence) - make sure it's not part of bold text
+    let italicRegex = /(?<!\*)\*([^*]+)\*(?!\*)/g;
+    while ((match = italicRegex.exec(text)) !== null) {
+        // Check if this range overlaps with any existing ranges
+        const overlaps = formatRanges.some(range =>
+            (match.index < range.end && match.index + match[0].length > range.start)
+        );
+        if (!overlaps) {
+            formatRanges.push({
+                start: match.index,
+                end: match.index + match[0].length,
+                content: match[1],
+                type: 'italic'
+            });
+        }
+    }
+
+    // Sort ranges by start position
+    formatRanges.sort((a, b) => a.start - b.start);
+
+    // Build segments from ranges
+    let currentIndex = 0;
+    formatRanges.forEach(range => {
+        // Add text before the formatted range
+        if (currentIndex < range.start) {
+            const beforeText = text.slice(currentIndex, range.start);
             if (beforeText) {
                 segments.push({ text: beforeText, type: 'normal' });
             }
         }
-        
+
         // Add the formatted text
-        segments.push({ text: match.content, type: match.type });
-        currentIndex = match.end;
+        segments.push({ text: range.content, type: range.type });
+        currentIndex = range.end;
     });
-    
+
     // Add remaining text
     if (currentIndex < text.length) {
         const remainingText = text.slice(currentIndex);
@@ -131,12 +161,12 @@ function processInlineFormatting(text) {
             segments.push({ text: remainingText, type: 'normal' });
         }
     }
-    
+
     // If no formatting found, return the original text
     if (segments.length === 0) {
         segments.push({ text: text, type: 'normal' });
     }
-    
+
     return segments;
 }
 
