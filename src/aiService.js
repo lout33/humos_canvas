@@ -130,37 +130,93 @@ export function getErrorMessage(error) {
     return errorMessage;
 }
 
-export async function generateAIIdeasMultipleModels(apiKey, baseURL, selectedNodeText, connectedNodes = [], models = []) {
+export async function generateAIIdeasMultipleModels(apiKey, baseURL, selectedNodeText, connectedNodes = [], models = [], onModelComplete = null) {
     if (!models || models.length === 0) {
         throw new Error('No models specified');
     }
 
-    const results = [];
+    const trimmedModels = models.map(m => m.trim()).filter(m => m.length > 0);
 
-    // Process models sequentially to avoid overwhelming the API
-    for (const model of models) {
-        const trimmedModel = model.trim();
-        if (!trimmedModel) continue;
-
-        try {
-            console.log(`🤖 Generating with model: ${trimmedModel}`);
-            const ideas = await generateAIIdeas(apiKey, baseURL, selectedNodeText, connectedNodes, trimmedModel);
-
-            // Add model attribution to each idea
-            results.push({
-                model: trimmedModel,
-                ideas: ideas
-            });
-        } catch (error) {
-            console.error(`❌ Error with model ${trimmedModel}:`, error.message);
-            // Continue with other models even if one fails
-            results.push({
-                model: trimmedModel,
-                ideas: [`Error with ${trimmedModel}: ${error.message}`],
-                error: true
-            });
-        }
+    if (trimmedModels.length === 0) {
+        throw new Error('No valid models specified');
     }
 
-    return results;
+    console.log(`🚀 Starting parallel generation with ${trimmedModels.length} models:`, trimmedModels);
+
+    // Create promises for all models to run in parallel
+    const modelPromises = trimmedModels.map(async (model) => {
+        try {
+            console.log(`🤖 Starting generation with model: ${model}`);
+            const ideas = await generateAIIdeas(apiKey, baseURL, selectedNodeText, connectedNodes, model);
+
+            const result = {
+                model: model,
+                ideas: ideas,
+                success: true,
+                timestamp: Date.now()
+            };
+
+            // Call the callback immediately when this model completes
+            if (onModelComplete && typeof onModelComplete === 'function') {
+                try {
+                    await onModelComplete(result);
+                } catch (callbackError) {
+                    console.error(`❌ Error in onModelComplete callback for ${model}:`, callbackError);
+                }
+            }
+
+            console.log(`✅ Completed generation with model: ${model}`);
+            return result;
+        } catch (error) {
+            console.error(`❌ Error with model ${model}:`, error.message);
+
+            const result = {
+                model: model,
+                ideas: [`Error with ${model}: ${error.message}`],
+                success: false,
+                error: true,
+                errorMessage: error.message,
+                timestamp: Date.now()
+            };
+
+            // Call the callback even for errors
+            if (onModelComplete && typeof onModelComplete === 'function') {
+                try {
+                    await onModelComplete(result);
+                } catch (callbackError) {
+                    console.error(`❌ Error in onModelComplete callback for ${model}:`, callbackError);
+                }
+            }
+
+            return result;
+        }
+    });
+
+    // Wait for all models to complete (or fail)
+    const results = await Promise.allSettled(modelPromises);
+
+    // Extract the actual results from Promise.allSettled
+    const finalResults = results.map(result => {
+        if (result.status === 'fulfilled') {
+            return result.value;
+        } else {
+            // This should rarely happen since we handle errors inside the promise
+            console.error('❌ Unexpected promise rejection:', result.reason);
+            return {
+                model: 'unknown',
+                ideas: [`Unexpected error: ${result.reason?.message || 'Unknown error'}`],
+                success: false,
+                error: true,
+                errorMessage: result.reason?.message || 'Unknown error',
+                timestamp: Date.now()
+            };
+        }
+    });
+
+    const successCount = finalResults.filter(r => r.success).length;
+    const errorCount = finalResults.filter(r => !r.success).length;
+
+    console.log(`🏁 Parallel generation completed: ${successCount} successful, ${errorCount} failed`);
+
+    return finalResults;
 }

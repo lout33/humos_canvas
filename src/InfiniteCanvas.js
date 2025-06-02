@@ -261,19 +261,67 @@ class InfiniteCanvas {
         }
     }
     
-    showNotification(message, type = 'info') {
+    showNotification(message, type = 'info', duration = 3000) {
         // Create notification element
         const notification = document.createElement('div');
         notification.className = `notification notification-${type}`;
         notification.textContent = message;
         document.body.appendChild(notification);
-        
-        // Remove after 3 seconds
+
+        // Remove after specified duration
         setTimeout(() => {
             if (notification.parentNode) {
                 notification.parentNode.removeChild(notification);
             }
-        }, 3000);
+        }, duration);
+    }
+
+    showProgressNotification(message, models = []) {
+        // Remove existing progress notification if any
+        this.hideProgressNotification();
+
+        // Create progress notification element
+        const progressNotification = document.createElement('div');
+        progressNotification.id = 'aiProgressNotification';
+        progressNotification.className = 'progress-notification';
+
+        progressNotification.innerHTML = `
+            <div class="progress-header">
+                <span class="progress-message">${message}</span>
+                <button class="progress-close" onclick="this.parentElement.parentElement.remove()">×</button>
+            </div>
+            <div class="progress-models">
+                ${models.map(model => {
+                    const modelName = model.split('/').pop() || model;
+                    return `<div class="model-status" data-model="${model}">
+                        <span class="model-name">${modelName}</span>
+                        <span class="model-indicator">⏳</span>
+                    </div>`;
+                }).join('')}
+            </div>
+            <div class="progress-summary">
+                <span id="progressSummary">Preparing...</span>
+            </div>
+        `;
+
+        document.body.appendChild(progressNotification);
+    }
+
+    updateProgressNotification(completed, total, totalNodes) {
+        const progressNotification = document.getElementById('aiProgressNotification');
+        if (!progressNotification) return;
+
+        const summaryElement = document.getElementById('progressSummary');
+        if (summaryElement) {
+            summaryElement.textContent = `${completed}/${total} models completed • ${totalNodes} ideas generated`;
+        }
+    }
+
+    hideProgressNotification() {
+        const progressNotification = document.getElementById('aiProgressNotification');
+        if (progressNotification && progressNotification.parentNode) {
+            progressNotification.parentNode.removeChild(progressNotification);
+        }
     }
     
     setupCanvas() {
@@ -1184,7 +1232,7 @@ class InfiniteCanvas {
         this.draw();
     }
     
-    // Enhanced AI functionality
+    // Enhanced AI functionality with parallel processing and real-time responses
     async generateAI() {
         // If no API key, show modal to set it
         if (!this.apiKey) {
@@ -1228,52 +1276,108 @@ class InfiniteCanvas {
             const models = this.aiModels.split(',').map(m => m.trim()).filter(m => m.length > 0);
             console.log('🎯 Using models:', models);
 
-            // Call the AI service to generate ideas with multiple models
-            const modelResults = await generateAIIdeasMultipleModels(this.apiKey, this.baseURL, sourceNode.text, connectedNodes, models);
-
-            // Save state for undo
+            // Save state for undo before starting generation
             this.saveState();
 
-            // Verify the source node still exists in our nodes array (in case it was deleted during generation)
+            // Verify the source node still exists in our nodes array
             const nodeStillExists = this.nodes.find(n => n.id === sourceNode.id);
             if (!nodeStillExists) {
                 throw new Error('Source node was deleted during AI generation');
             }
 
-            const createdNodes = [];
+            // Show progress notification
+            this.showProgressNotification(`Starting AI generation with ${models.length} model(s)...`, models);
+
+            // Track generation progress
+            let completedModels = 0;
             let totalNodes = 0;
+            const createdNodes = [];
 
-            // Process results from each model
-            modelResults.forEach((modelResult) => {
-                modelResult.ideas.forEach((idea) => {
-                    // Position new nodes in a circular pattern around the source node
-                    const angle = (totalNodes / modelResults.reduce((sum, mr) => sum + mr.ideas.length, 0)) * 2 * Math.PI;
-                    const radius = 180;
-                    const x = sourceNode.x + sourceNode.width/2 + Math.cos(angle) * radius - 100;
-                    const y = sourceNode.y + sourceNode.height/2 + Math.sin(angle) * radius - 30;
+            // Define callback for when each model completes
+            const onModelComplete = async (modelResult) => {
+                completedModels++;
 
-                    const newNode = this.createNode(idea, x, y, modelResult.model);
-                    createdNodes.push(newNode);
+                console.log(`📦 Model ${modelResult.model} completed (${completedModels}/${models.length})`);
 
-                    // Create connection from source to new node
-                    this.createConnection(sourceNode, newNode);
+                // Verify the source node still exists before creating new nodes
+                const sourceStillExists = this.nodes.find(n => n.id === sourceNode.id);
+                if (!sourceStillExists) {
+                    console.warn('⚠️ Source node was deleted during generation, skipping node creation');
+                    return;
+                }
 
-                    totalNodes++;
-                });
-            });
+                // Process ideas from this model immediately
+                if (modelResult.success && modelResult.ideas && modelResult.ideas.length > 0) {
+                    modelResult.ideas.forEach((idea) => {
+                        // Position new nodes in a circular pattern around the source node
+                        const angle = (totalNodes / (models.length * 1.5)) * 2 * Math.PI; // Estimate total nodes
+                        const radius = 180;
+                        const x = sourceNode.x + sourceNode.width/2 + Math.cos(angle) * radius - 200;
+                        const y = sourceNode.y + sourceNode.height/2 + Math.sin(angle) * radius - 30;
 
-            const message = totalNodes === 1
-                ? `Generated 1 AI idea and connected it!`
-                : `Generated ${totalNodes} AI ideas from ${modelResults.length} model(s) and connected them!`;
-            this.showNotification(message, 'success');
-            
+                        const newNode = this.createNode(idea, x, y, modelResult.model);
+                        createdNodes.push(newNode);
+
+                        // Create connection from source to new node
+                        this.createConnection(sourceNode, newNode);
+
+                        totalNodes++;
+                    });
+
+                    // Update the canvas immediately to show the new node
+                    this.draw();
+                    this.saveToLocalStorage();
+
+                    // Show immediate feedback for this model
+                    const modelName = modelResult.model.split('/').pop() || modelResult.model;
+                    this.showNotification(`✅ ${modelName} generated ${modelResult.ideas.length} idea(s)`, 'success', 2000);
+                } else if (!modelResult.success) {
+                    // Show error for this specific model
+                    const modelName = modelResult.model.split('/').pop() || modelResult.model;
+                    this.showNotification(`❌ ${modelName} failed: ${modelResult.errorMessage}`, 'error', 3000);
+                }
+
+                // Update progress and model status
+                this.updateProgressNotification(completedModels, models.length, totalNodes);
+                this.updateModelStatus(modelResult.model, modelResult.success ? 'success' : 'error');
+            };
+
+            // Call the AI service with parallel processing and real-time callbacks
+            const modelResults = await generateAIIdeasMultipleModels(
+                this.apiKey,
+                this.baseURL,
+                sourceNode.text,
+                connectedNodes,
+                models,
+                onModelComplete
+            );
+
+            // Final summary notification
+            const successfulModels = modelResults.filter(r => r.success).length;
+            const failedModels = modelResults.filter(r => !r.success).length;
+
+            let summaryMessage;
+            if (totalNodes > 0) {
+                summaryMessage = `🎉 Generation complete! Created ${totalNodes} idea(s) from ${successfulModels} model(s)`;
+                if (failedModels > 0) {
+                    summaryMessage += ` (${failedModels} model(s) failed)`;
+                }
+            } else {
+                summaryMessage = `❌ No ideas generated. All ${models.length} model(s) failed.`;
+            }
+
+            this.showNotification(summaryMessage, totalNodes > 0 ? 'success' : 'error', 4000);
+
         } catch (error) {
             console.error('Error calling AI API:', error);
-            
+
             const errorMessage = getErrorMessage(error);
             this.showNotification(errorMessage, 'error');
         } finally {
             this.isGeneratingAI = false;
+
+            // Hide progress notification
+            this.hideProgressNotification();
 
             // Restore tooltip button state
             this.updateGenerateIdeasTooltip();
