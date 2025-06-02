@@ -8,7 +8,7 @@ import {
     drawSelectionRectangle
 } from './canvasRenderer.js';
 
-import { calculateMarkdownHeight } from './markdownParser.js';
+import { calculateMarkdownHeight, parseMarkdown } from './markdownParser.js';
 
 import {
     generateAIIdeasMultipleModels,
@@ -214,10 +214,11 @@ class InfiniteCanvas {
 
     updateGenerateIdeasTooltip() {
         const tooltip = document.getElementById('generateIdeasTooltip');
-        const btn = document.getElementById('generateIdeasBtn');
+        const generateBtn = document.getElementById('generateIdeasBtn');
+        const expandBtn = document.getElementById('expandContentBtn');
 
-        // Only show generate button for single node selection
-        if (this.selectedNodes.length === 1 && this.apiKey) {
+        // Only show buttons for single node selection
+        if (this.selectedNodes.length === 1) {
             const selectedNode = this.selectedNodes[0];
             const rect = this.canvas.getBoundingClientRect();
 
@@ -225,7 +226,7 @@ class InfiniteCanvas {
             const nodeScreenX = rect.left + (selectedNode.x * this.scale) + this.offsetX;
             const nodeScreenY = rect.top + (selectedNode.y * this.scale) + this.offsetY;
             const tooltipX = nodeScreenX + (selectedNode.width * this.scale) / 2;
-            const tooltipY = nodeScreenY - 50; // 50px above the node
+            const tooltipY = nodeScreenY - 60; // 60px above the node to accommodate both buttons
 
             tooltip.style.left = `${tooltipX}px`;
             tooltip.style.top = `${tooltipY}px`;
@@ -233,9 +234,18 @@ class InfiniteCanvas {
 
             tooltip.classList.remove('hidden');
 
-            // Update button state
-            btn.disabled = this.isGeneratingAI;
-            btn.textContent = this.isGeneratingAI ? '⏳ Generating...' : '🤖 Generate Ideas';
+            // Update generate button state (only show if API key is configured)
+            if (this.apiKey) {
+                generateBtn.style.display = 'flex';
+                generateBtn.disabled = this.isGeneratingAI;
+                generateBtn.textContent = this.isGeneratingAI ? '⏳' : '🤖';
+                generateBtn.title = this.isGeneratingAI ? 'Generating...' : 'Generate Ideas';
+            } else {
+                generateBtn.style.display = 'none';
+            }
+
+            // Always show expand button for single selection
+            expandBtn.style.display = 'flex';
         } else {
             tooltip.classList.add('hidden');
         }
@@ -323,6 +333,109 @@ class InfiniteCanvas {
             progressNotification.parentNode.removeChild(progressNotification);
         }
     }
+
+    showContentModal() {
+        // Check if exactly one node is selected
+        if (this.selectedNodes.length !== 1) {
+            this.showNotification('Please select exactly one node to expand its content', 'warning');
+            return;
+        }
+
+        const selectedNode = this.selectedNodes[0];
+        const modal = document.getElementById('contentModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalContent = document.getElementById('modalContent');
+
+        // Set modal content
+        modalTitle.textContent = 'Node Content';
+
+        // Convert markdown to HTML for better display in modal
+        const htmlContent = this.markdownToHtml(selectedNode.text || 'No content');
+        modalContent.innerHTML = htmlContent;
+
+        // Show modal
+        modal.classList.remove('hidden');
+
+        // Add escape key handler
+        this.modalEscapeHandler = (e) => {
+            if (e.key === 'Escape') {
+                this.hideContentModal();
+            }
+        };
+        document.addEventListener('keydown', this.modalEscapeHandler);
+    }
+
+    // Convert markdown to HTML for modal display
+    markdownToHtml(text) {
+        if (!text || typeof text !== 'string') {
+            return '<p>No content</p>';
+        }
+
+        const parsed = parseMarkdown(text);
+        let html = '';
+
+        parsed.forEach(item => {
+            if (item.type === 'spacing') {
+                html += '<br>';
+                return;
+            }
+
+            if (item.type === 'header') {
+                const level = item.level || 1;
+                html += `<h${level}>${this.escapeHtml(item.content)}</h${level}>`;
+            } else if (item.type === 'list') {
+                const content = Array.isArray(item.content)
+                    ? this.processInlineFormattingToHtml(item.content)
+                    : this.escapeHtml(item.content);
+                html += `<li>${content}</li>`;
+            } else {
+                const content = Array.isArray(item.content)
+                    ? this.processInlineFormattingToHtml(item.content)
+                    : this.escapeHtml(item.content);
+                html += `<p>${content}</p>`;
+            }
+        });
+
+        // Wrap list items in ul tags
+        html = html.replace(/(<li>.*?<\/li>)+/g, '<ul>$&</ul>');
+
+        return html || '<p>No content</p>';
+    }
+
+    // Process inline formatting to HTML
+    processInlineFormattingToHtml(segments) {
+        return segments.map(segment => {
+            const text = this.escapeHtml(segment.text);
+            switch (segment.type) {
+                case 'bold':
+                    return `<strong>${text}</strong>`;
+                case 'italic':
+                    return `<em>${text}</em>`;
+                case 'code':
+                    return `<code>${text}</code>`;
+                default:
+                    return text;
+            }
+        }).join('');
+    }
+
+    // Escape HTML characters
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    hideContentModal() {
+        const modal = document.getElementById('contentModal');
+        modal.classList.add('hidden');
+
+        // Remove escape key handler
+        if (this.modalEscapeHandler) {
+            document.removeEventListener('keydown', this.modalEscapeHandler);
+            this.modalEscapeHandler = null;
+        }
+    }
     
     setupCanvas() {
         this.resizeCanvas();
@@ -370,6 +483,17 @@ class InfiniteCanvas {
 
         // Generate Ideas tooltip button
         document.getElementById('generateIdeasBtn').addEventListener('click', () => this.generateAI());
+
+        // Expand Content button
+        document.getElementById('expandContentBtn').addEventListener('click', () => this.showContentModal());
+
+        // Modal close handlers
+        document.getElementById('closeModalBtn').addEventListener('click', () => this.hideContentModal());
+        document.getElementById('contentModal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-backdrop')) {
+                this.hideContentModal();
+            }
+        });
 
         // Canvas controls
         document.getElementById('zoomInBtn').addEventListener('click', () => this.zoom(1.2));

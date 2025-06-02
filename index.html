@@ -25,7 +25,22 @@
 
         <!-- Generate Ideas tooltip (appears above selected nodes) -->
         <div id="generateIdeasTooltip" class="generate-ideas-tooltip hidden">
-            <button id="generateIdeasBtn" class="generate-ideas-btn">🤖 Generate Ideas</button>
+            <button id="generateIdeasBtn" class="generate-ideas-btn" title="Generate Ideas">🤖</button>
+            <button id="expandContentBtn" class="expand-content-btn" title="Expand Content">🔍</button>
+        </div>
+
+        <!-- Content Expansion Modal -->
+        <div id="contentModal" class="content-modal hidden">
+            <div class="modal-backdrop"></div>
+            <div class="modal-container">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Node Content</h3>
+                    <button id="closeModalBtn" class="close-modal-btn">×</button>
+                </div>
+                <div class="modal-body">
+                    <div id="modalContent" class="modal-content-text"></div>
+                </div>
+            </div>
         </div>
 
         <!-- Selection status indicator -->
