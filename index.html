@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Canvas MVP</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Canvas element for drawing -->
+        <canvas id="canvas"></canvas>
+        
+        <!-- Floating toolbar -->
+        <div class="floating-toolbar">
+            <button id="addNodeBtn" class="toolbar-btn">Add Node</button>
+            <button id="generateAIBtn" class="toolbar-btn">Generate AI</button>
+            <button id="exportBtn" class="toolbar-btn">Export JSON</button>
+        </div>
+        
+        <!-- Canvas navigation controls -->
+        <div class="canvas-controls">
+            <button id="zoomInBtn" class="control-btn">+</button>
+            <button id="zoomOutBtn" class="control-btn">-</button>
+            <button id="resetViewBtn" class="control-btn">⌂</button>
+            <div class="control-separator"></div>
+            <button id="undoBtn" class="control-btn" title="Undo">↶</button>
+            <button id="redoBtn" class="control-btn" title="Redo">↷</button>
+        </div>
+    </div>
+    
+    <script type="module" src="main.js"></script>
+</body>
+</html>
