@@ -11,7 +11,6 @@ import {
 import { calculateMarkdownHeight, parseMarkdown } from './markdownParser.js';
 
 import {
-    generateAIIdeasMultipleModels,
     getProviderName,
     getErrorMessage
 } from './aiService.js';
@@ -58,6 +57,10 @@ class InfiniteCanvas {
         this.aiModels = localStorage.getItem('ai_models') || 'gpt-3.5-turbo';
         this.isGeneratingAI = false;
 
+        // Demo mode with Groq API (free, fast inference)
+        this.demoMode = localStorage.getItem('ai_demo_mode') === 'true' || false;
+        this.demoModels = 'meta-llama/llama-4-maverick-17b-128e-instruct,qwen-qwq-32b,gemma2-9b-it'; // Free Groq models
+
         // Performance optimizations
         this.spatialGrid = new Map(); // Spatial hash grid for fast collision detection
         this.gridSize = 200; // Grid cell size in canvas units
@@ -95,20 +98,30 @@ class InfiniteCanvas {
             modal.innerHTML = `
                 <div class="modal-content">
                     <h3>AI API Configuration</h3>
-                    <p>Configure your AI API settings. Supports OpenAI, OpenRouter, and other compatible APIs:</p>
+                    <p>Configure your AI API settings. Choose between demo mode (free) or your own API:</p>
 
-                    <label for="baseUrlInput">Base URL:</label>
-                    <input type="text" id="baseUrlInput" placeholder="https://api.openai.com/v1" />
+                    <div class="demo-mode-section">
+                        <label class="demo-toggle">
+                            <input type="checkbox" id="demoModeToggle" />
+                            <span class="demo-toggle-text">🎯 Use Demo Mode (Free - No API Key Required)</span>
+                        </label>
+                        <p class="demo-description">Demo mode uses free Groq API with Llama 3.3 70B & other powerful models. Perfect for trying the app!</p>
+                    </div>
 
-                    <label for="apiKeyInput">API Key:</label>
-                    <input type="password" id="apiKeyInput" placeholder="sk-... or or-..." />
+                    <div id="apiConfigSection">
+                        <label for="baseUrlInput">Base URL:</label>
+                        <input type="text" id="baseUrlInput" placeholder="https://api.openai.com/v1" />
 
-                    <label for="aiModelsInput">AI Models (comma-separated):</label>
-                    <input type="text" id="aiModelsInput" placeholder="gpt-3.5-turbo, deepseek/deepseek-r1-0528, x-ai/grok-3-mini-beta" />
-                    <small style="display: block; margin-bottom: 15px; color: #666;">
-                        Enter one or more model names separated by commas. When multiple models are specified,
-                        the "Generate Ideas" button will create one node for each model.
-                    </small>
+                        <label for="apiKeyInput">API Key:</label>
+                        <input type="password" id="apiKeyInput" placeholder="sk-... or or-..." />
+
+                        <label for="aiModelsInput">AI Models (comma-separated):</label>
+                        <input type="text" id="aiModelsInput" placeholder="gpt-3.5-turbo, deepseek/deepseek-r1-0528, x-ai/grok-3-mini-beta" />
+                        <small style="display: block; margin-bottom: 15px; color: #666;">
+                            Enter one or more model names separated by commas. When multiple models are specified,
+                            the "Generate Ideas" button will create one node for each model.
+                        </small>
+                    </div>
 
                     <div class="modal-buttons">
                         <button id="saveApiKeyBtn">Save Configuration</button>
@@ -119,6 +132,7 @@ class InfiniteCanvas {
                         • OpenAI: https://api.openai.com/v1<br>
                         • OpenRouter: https://openrouter.ai/api/v1<br>
                         • Local models: http://localhost:1234/v1<br>
+                        • Demo mode: Free Groq API (get key at console.groq.com)<br>
                         Your settings are stored locally and never shared.
                     </small>
                 </div>
@@ -128,6 +142,7 @@ class InfiniteCanvas {
             // Add event listeners
             document.getElementById('saveApiKeyBtn').addEventListener('click', () => this.saveApiConfig());
             document.getElementById('cancelApiKeyBtn').addEventListener('click', () => this.hideApiKeyModal());
+            document.getElementById('demoModeToggle').addEventListener('change', (e) => this.toggleDemoMode(e.target.checked));
             document.getElementById('apiKeyInput').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') this.saveApiConfig();
                 if (e.key === 'Escape') this.hideApiKeyModal();
@@ -151,68 +166,131 @@ class InfiniteCanvas {
         const apiKeyInput = document.getElementById('apiKeyInput');
         const baseUrlInput = document.getElementById('baseUrlInput');
         const aiModelsInput = document.getElementById('aiModelsInput');
+        const demoModeToggle = document.getElementById('demoModeToggle');
+
         modal.style.display = 'flex';
+
+        // Set current values
         apiKeyInput.value = this.apiKey || '';
         baseUrlInput.value = this.baseURL || 'https://api.openai.com/v1';
         aiModelsInput.value = this.aiModels || 'gpt-3.5-turbo';
-        baseUrlInput.focus();
+        demoModeToggle.checked = this.demoMode;
+
+        // Show/hide API config section based on demo mode
+        this.toggleApiConfigVisibility(!this.demoMode);
+
+        // Focus appropriate field
+        if (this.demoMode) {
+            demoModeToggle.focus();
+        } else {
+            baseUrlInput.focus();
+        }
     }
     
     hideApiKeyModal() {
         document.getElementById('apiKeyModal').style.display = 'none';
     }
+
+    toggleDemoMode(enabled) {
+        this.demoMode = enabled;
+        this.toggleApiConfigVisibility(!enabled);
+
+        // If enabling demo mode, clear API requirements
+        if (enabled) {
+            // Demo mode doesn't need API key validation
+            console.log('🎯 Demo mode enabled - using free Hugging Face models');
+        } else {
+            console.log('🔑 Demo mode disabled - using custom API configuration');
+        }
+    }
+
+    toggleApiConfigVisibility(visible) {
+        const apiConfigSection = document.getElementById('apiConfigSection');
+        if (apiConfigSection) {
+            apiConfigSection.style.display = visible ? 'block' : 'none';
+        }
+    }
     
     saveApiConfig() {
-        const apiKeyInput = document.getElementById('apiKeyInput');
-        const baseUrlInput = document.getElementById('baseUrlInput');
-        const aiModelsInput = document.getElementById('aiModelsInput');
-        const apiKey = apiKeyInput.value.trim();
-        const baseURL = baseUrlInput.value.trim();
-        const aiModels = aiModelsInput.value.trim();
+        const demoModeToggle = document.getElementById('demoModeToggle');
+        const demoMode = demoModeToggle.checked;
 
-        if (!apiKey) {
-            this.showNotification('Please enter an API key', 'error');
-            return;
+        // Save demo mode preference
+        this.demoMode = demoMode;
+        localStorage.setItem('ai_demo_mode', demoMode.toString());
+
+        if (demoMode) {
+            // Demo mode - no API key required
+            this.apiKey = null; // Clear any existing API key
+            this.baseURL = null; // Clear any existing base URL
+            this.aiModels = this.demoModels; // Use demo models
+
+            // Clear stored API credentials when switching to demo mode
+            localStorage.removeItem('ai_api_key');
+            localStorage.removeItem('ai_base_url');
+            localStorage.setItem('ai_models', this.demoModels);
+
+            this.hideApiKeyModal();
+            this.updateApiConfigButton();
+
+            const modelCount = this.demoModels.split(',').length;
+            this.showNotification(`🎯 Demo mode enabled with ${modelCount} free model(s)!`, 'success');
+        } else {
+            // Regular API mode - validate inputs
+            const apiKeyInput = document.getElementById('apiKeyInput');
+            const baseUrlInput = document.getElementById('baseUrlInput');
+            const aiModelsInput = document.getElementById('aiModelsInput');
+            const apiKey = apiKeyInput.value.trim();
+            const baseURL = baseUrlInput.value.trim();
+            const aiModels = aiModelsInput.value.trim();
+
+            if (!apiKey) {
+                this.showNotification('Please enter an API key', 'error');
+                return;
+            }
+
+            if (!baseURL) {
+                this.showNotification('Please enter a base URL', 'error');
+                return;
+            }
+
+            if (!aiModels) {
+                this.showNotification('Please enter at least one AI model', 'error');
+                return;
+            }
+
+            // Validate URL format
+            try {
+                new URL(baseURL);
+            } catch (e) {
+                this.showNotification('Please enter a valid URL', 'error');
+                return;
+            }
+
+            this.apiKey = apiKey;
+            this.baseURL = baseURL;
+            this.aiModels = aiModels;
+            localStorage.setItem('ai_api_key', apiKey);
+            localStorage.setItem('ai_base_url', baseURL);
+            localStorage.setItem('ai_models', aiModels);
+
+            this.hideApiKeyModal();
+            this.updateApiConfigButton();
+
+            // Show success message with provider info
+            const provider = getProviderName(baseURL);
+            const modelCount = aiModels.split(',').length;
+            this.showNotification(`${provider} configuration saved with ${modelCount} model(s)!`, 'success');
         }
-
-        if (!baseURL) {
-            this.showNotification('Please enter a base URL', 'error');
-            return;
-        }
-
-        if (!aiModels) {
-            this.showNotification('Please enter at least one AI model', 'error');
-            return;
-        }
-
-        // Validate URL format
-        try {
-            new URL(baseURL);
-        } catch (e) {
-            this.showNotification('Please enter a valid URL', 'error');
-            return;
-        }
-
-        this.apiKey = apiKey;
-        this.baseURL = baseURL;
-        this.aiModels = aiModels;
-        localStorage.setItem('ai_api_key', apiKey);
-        localStorage.setItem('ai_base_url', baseURL);
-        localStorage.setItem('ai_models', aiModels);
-
-
-        this.hideApiKeyModal();
-        this.updateApiConfigButton();
-
-        // Show success message with provider info
-        const provider = getProviderName(baseURL);
-        const modelCount = aiModels.split(',').length;
-        this.showNotification(`${provider} configuration saved with ${modelCount} model(s)!`, 'success');
     }
     
     updateApiConfigButton() {
         const btn = document.getElementById('configureApiBtn');
-        if (this.apiKey) {
+        if (this.demoMode) {
+            btn.textContent = '🎯 Demo Mode Active';
+            btn.title = 'Demo mode is active with free Hugging Face models. Click to change settings.';
+            btn.style.background = '#17a2b8'; // Blue for demo mode
+        } else if (this.apiKey) {
             const provider = getProviderName(this.baseURL);
             btn.textContent = `🔑 ${provider} Configured`;
             btn.title = `API configured for ${provider}. Click to change settings.`;
@@ -246,8 +324,8 @@ class InfiniteCanvas {
 
             tooltip.classList.remove('hidden');
 
-            // Update generate button state (only show if API key is configured)
-            if (this.apiKey) {
+            // Update generate button state (show if API key is configured OR demo mode is active)
+            if (this.apiKey || this.demoMode) {
                 generateBtn.style.display = 'flex';
                 generateBtn.disabled = this.isGeneratingAI;
                 generateBtn.textContent = this.isGeneratingAI ? '⏳' : '🤖';
@@ -1508,8 +1586,8 @@ class InfiniteCanvas {
     
     // Enhanced AI functionality with parallel processing and real-time responses
     async generateAI() {
-        // If no API key, show modal to set it
-        if (!this.apiKey) {
+        // If no API key and not in demo mode, show modal to set it
+        if (!this.apiKey && !this.demoMode) {
             this.showApiKeyModal();
             return;
         }
@@ -1611,20 +1689,33 @@ class InfiniteCanvas {
                     this.showNotification(`❌ ${modelName} failed: ${modelResult.errorMessage}`, 'error', 3000);
                 }
 
-                // Update progress and model status
+                // Update progress notification
                 this.updateProgressNotification(completedModels, models.length, totalNodes);
-                this.updateModelStatus(modelResult.model, modelResult.success ? 'success' : 'error');
             };
 
             // Call the AI service with parallel processing and real-time callbacks
-            const modelResults = await generateAIIdeasMultipleModels(
-                this.apiKey,
-                this.baseURL,
-                sourceNode.text,
-                connectedNodes,
-                models,
-                onModelComplete
-            );
+            let modelResults;
+            if (this.demoMode) {
+                // Use Groq demo mode
+                const { generateAIIdeasMultipleModelsGroq } = await import('./aiService.js');
+                modelResults = await generateAIIdeasMultipleModelsGroq(
+                    sourceNode.text,
+                    connectedNodes,
+                    models,
+                    onModelComplete
+                );
+            } else {
+                // Use regular API mode
+                const { generateAIIdeasMultipleModels } = await import('./aiService.js');
+                modelResults = await generateAIIdeasMultipleModels(
+                    this.apiKey,
+                    this.baseURL,
+                    sourceNode.text,
+                    connectedNodes,
+                    models,
+                    onModelComplete
+                );
+            }
 
             // Final summary notification
             const successfulModels = modelResults.filter(r => r.success).length;

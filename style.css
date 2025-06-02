@@ -553,6 +553,48 @@ body {
     font-size: 12px;
 }
 
+/* Demo Mode Section */
+.demo-mode-section {
+    background: #2a2a2a;
+    border: 1px solid #404040;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.demo-toggle {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    margin-bottom: 8px;
+}
+
+.demo-toggle input[type="checkbox"] {
+    margin-right: 10px;
+    transform: scale(1.2);
+}
+
+.demo-toggle-text {
+    color: #e0e0e0;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.demo-description {
+    color: #b0b0b0;
+    font-size: 13px;
+    margin: 0;
+    line-height: 1.4;
+}
+
+#apiConfigSection {
+    transition: opacity 0.3s ease;
+}
+
+#apiConfigSection[style*="none"] {
+    opacity: 0;
+}
+
 /* Notifications */
 .notification {
     position: fixed;
