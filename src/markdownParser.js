@@ -141,9 +141,17 @@ function processInlineFormatting(text) {
 }
 
 // Calculate the total height needed for rendered markdown content
-export function calculateMarkdownHeight(ctx, text, maxWidth, padding = 16) {
+export function calculateMarkdownHeight(ctx, text, maxWidth, margins = 16) {
+    // Handle both old padding format and new margins object
+    const marginConfig = typeof margins === 'object' ? margins : {
+        top: margins / 2,
+        bottom: margins / 2,
+        left: margins / 2,
+        right: margins / 2
+    };
+
     const parsed = parseMarkdown(text);
-    let totalHeight = padding / 2; // Top padding
+    let totalHeight = marginConfig.top; // Top margin
     
     parsed.forEach(item => {
         if (item.type === 'spacing') {
@@ -167,16 +175,16 @@ export function calculateMarkdownHeight(ctx, text, maxWidth, padding = 16) {
         if (Array.isArray(item.content)) {
             // Handle inline formatted content
             const fullText = item.content.map(segment => segment.text).join('');
-            const wrappedLines = wrapTextForMarkdown(ctx, fullText, maxWidth - padding, item);
+            const wrappedLines = wrapTextForMarkdown(ctx, fullText, maxWidth - marginConfig.left - marginConfig.right, item);
             totalHeight += wrappedLines.length * lineHeight;
         } else {
             // Handle simple content
-            const wrappedLines = wrapTextForMarkdown(ctx, item.content, maxWidth - padding, item);
+            const wrappedLines = wrapTextForMarkdown(ctx, item.content, maxWidth - marginConfig.left - marginConfig.right, item);
             totalHeight += wrappedLines.length * lineHeight;
         }
     });
-    
-    return Math.max(40, totalHeight + padding / 2); // Minimum height with bottom padding
+
+    return Math.max(40, totalHeight + marginConfig.bottom); // Minimum height with bottom margin
 }
 
 // Enhanced text wrapping that considers formatting

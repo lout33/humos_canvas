@@ -339,25 +339,37 @@ class InfiniteCanvas {
         const clickedNode = this.getNodeAtPoint(canvasX, canvasY);
         
         if (clickedNode) {
-            this.selectNode(clickedNode);
-            
-            // Check for resize handle first
-            const resizeHandle = this.getResizeHandle(clickedNode, canvasX, canvasY);
-            
-            if (resizeHandle) {
-                // Start resizing
+            // Check for border-based resize first (works on any node)
+            const borderResizeHandle = this.getBorderResizeHandle(clickedNode, canvasX, canvasY);
+
+            if (borderResizeHandle) {
+                // Start border-based resizing
+                this.selectNode(clickedNode); // Select the node when starting to resize
                 this.isResizing = true;
-                this.resizeHandle = resizeHandle;
+                this.resizeHandle = borderResizeHandle;
                 this.resizeTarget = clickedNode;
-                this.setCursorForResize(resizeHandle);
-            } else if (e.ctrlKey || e.metaKey) {
-                // Connection mode
-                this.isConnecting = true;
-                this.connectionStart = clickedNode;
-                this.canvas.style.cursor = 'crosshair';
+                this.setCursorForResize(borderResizeHandle);
             } else {
-                // Regular drag
-                this.dragTarget = clickedNode;
+                this.selectNode(clickedNode);
+
+                // Check for traditional resize handles on selected nodes
+                const resizeHandle = this.getResizeHandle(clickedNode, canvasX, canvasY);
+
+                if (resizeHandle) {
+                    // Start traditional resizing
+                    this.isResizing = true;
+                    this.resizeHandle = resizeHandle;
+                    this.resizeTarget = clickedNode;
+                    this.setCursorForResize(resizeHandle);
+                } else if (e.ctrlKey || e.metaKey) {
+                    // Connection mode
+                    this.isConnecting = true;
+                    this.connectionStart = clickedNode;
+                    this.canvas.style.cursor = 'crosshair';
+                } else {
+                    // Regular drag
+                    this.dragTarget = clickedNode;
+                }
             }
         } else {
             this.selectNode(null);
@@ -377,14 +389,21 @@ class InfiniteCanvas {
     
     setCursorForResize(handle) {
         switch(handle) {
-            case 'right':
-                this.canvas.style.cursor = 'ew-resize';
-                break;
+            case 'top':
             case 'bottom':
                 this.canvas.style.cursor = 'ns-resize';
                 break;
+            case 'left':
+            case 'right':
+                this.canvas.style.cursor = 'ew-resize';
+                break;
+            case 'top-left':
             case 'bottom-right':
                 this.canvas.style.cursor = 'nw-resize';
+                break;
+            case 'top-right':
+            case 'bottom-left':
+                this.canvas.style.cursor = 'ne-resize';
                 break;
             default:
                 this.canvas.style.cursor = 'default';
@@ -407,15 +426,22 @@ class InfiniteCanvas {
         // Update cursor based on hover state
         if (!this.isDragging && !this.isConnecting && !this.isResizing) {
             const hoveredNode = this.getNodeAtPoint(canvasX, canvasY);
-            if (hoveredNode && hoveredNode.isSelected) {
-                const resizeHandle = this.getResizeHandle(hoveredNode, canvasX, canvasY);
-                if (resizeHandle) {
-                    this.setCursorForResize(resizeHandle);
+            if (hoveredNode) {
+                // Check for border-based resize first (works on any node)
+                const borderResizeHandle = this.getBorderResizeHandle(hoveredNode, canvasX, canvasY);
+                if (borderResizeHandle) {
+                    this.setCursorForResize(borderResizeHandle);
+                } else if (hoveredNode.isSelected) {
+                    // Check for traditional resize handles on selected nodes
+                    const resizeHandle = this.getResizeHandle(hoveredNode, canvasX, canvasY);
+                    if (resizeHandle) {
+                        this.setCursorForResize(resizeHandle);
+                    } else {
+                        this.canvas.style.cursor = 'grab';
+                    }
                 } else {
                     this.canvas.style.cursor = 'grab';
                 }
-            } else if (hoveredNode) {
-                this.canvas.style.cursor = 'grab';
             } else {
                 this.canvas.style.cursor = 'grab';
             }
@@ -431,23 +457,68 @@ class InfiniteCanvas {
             // Handle resizing
             const deltaX = mouseX - this.dragStartX;
             const deltaY = mouseY - this.dragStartY;
-            
+
             // Mark node as manually resized
             this.resizeTarget.manuallyResized = true;
-            
+
+            const minWidth = 60;
+            const minHeight = 40;
+            const scaledDeltaX = deltaX / this.scale;
+            const scaledDeltaY = deltaY / this.scale;
+
             switch(this.resizeHandle) {
-                case 'right':
-                    this.resizeTarget.width = Math.max(60, this.resizeTarget.width + deltaX / this.scale);
+                case 'top':
+                    const newHeightTop = this.resizeTarget.height - scaledDeltaY;
+                    if (newHeightTop >= minHeight) {
+                        this.resizeTarget.y += scaledDeltaY;
+                        this.resizeTarget.height = newHeightTop;
+                    }
                     break;
                 case 'bottom':
-                    this.resizeTarget.height = Math.max(40, this.resizeTarget.height + deltaY / this.scale);
+                    this.resizeTarget.height = Math.max(minHeight, this.resizeTarget.height + scaledDeltaY);
+                    break;
+                case 'left':
+                    const newWidthLeft = this.resizeTarget.width - scaledDeltaX;
+                    if (newWidthLeft >= minWidth) {
+                        this.resizeTarget.x += scaledDeltaX;
+                        this.resizeTarget.width = newWidthLeft;
+                    }
+                    break;
+                case 'right':
+                    this.resizeTarget.width = Math.max(minWidth, this.resizeTarget.width + scaledDeltaX);
+                    break;
+                case 'top-left':
+                    const newWidthTL = this.resizeTarget.width - scaledDeltaX;
+                    const newHeightTL = this.resizeTarget.height - scaledDeltaY;
+                    if (newWidthTL >= minWidth && newHeightTL >= minHeight) {
+                        this.resizeTarget.x += scaledDeltaX;
+                        this.resizeTarget.y += scaledDeltaY;
+                        this.resizeTarget.width = newWidthTL;
+                        this.resizeTarget.height = newHeightTL;
+                    }
+                    break;
+                case 'top-right':
+                    const newHeightTR = this.resizeTarget.height - scaledDeltaY;
+                    if (newHeightTR >= minHeight) {
+                        this.resizeTarget.y += scaledDeltaY;
+                        this.resizeTarget.height = newHeightTR;
+                    }
+                    this.resizeTarget.width = Math.max(minWidth, this.resizeTarget.width + scaledDeltaX);
+                    break;
+                case 'bottom-left':
+                    const newWidthBL = this.resizeTarget.width - scaledDeltaX;
+                    if (newWidthBL >= minWidth) {
+                        this.resizeTarget.x += scaledDeltaX;
+                        this.resizeTarget.width = newWidthBL;
+                    }
+                    this.resizeTarget.height = Math.max(minHeight, this.resizeTarget.height + scaledDeltaY);
                     break;
                 case 'bottom-right':
-                    this.resizeTarget.width = Math.max(60, this.resizeTarget.width + deltaX / this.scale);
-                    this.resizeTarget.height = Math.max(40, this.resizeTarget.height + deltaY / this.scale);
+                    this.resizeTarget.width = Math.max(minWidth, this.resizeTarget.width + scaledDeltaX);
+                    this.resizeTarget.height = Math.max(minHeight, this.resizeTarget.height + scaledDeltaY);
                     break;
             }
-            
+
             this.dragStartX = mouseX;
             this.dragStartY = mouseY;
             this.draw();
@@ -581,25 +652,94 @@ class InfiniteCanvas {
     getResizeHandle(node, x, y) {
         const handleSize = 12;
         const tolerance = 8;
-        
+
         // Right handle
         if (Math.abs(x - (node.x + node.width)) < tolerance &&
             Math.abs(y - (node.y + node.height/2)) < handleSize/2 + tolerance) {
             return 'right';
         }
-        
+
         // Bottom handle
         if (Math.abs(x - (node.x + node.width/2)) < handleSize/2 + tolerance &&
             Math.abs(y - (node.y + node.height)) < tolerance) {
             return 'bottom';
         }
-        
+
         // Bottom-right corner handle (check this first as it's most specific)
         if (Math.abs(x - (node.x + node.width)) < tolerance &&
             Math.abs(y - (node.y + node.height)) < tolerance) {
             return 'bottom-right';
         }
-        
+
+        return null;
+    }
+
+    // Enhanced border-based resize detection for any node
+    getBorderResizeHandle(node, x, y) {
+        const borderTolerance = 8; // Distance from border to trigger resize
+        const cornerSize = 20; // Size of corner resize areas
+
+        const nodeLeft = node.x;
+        const nodeRight = node.x + node.width;
+        const nodeTop = node.y;
+        const nodeBottom = node.y + node.height;
+
+        // Check if mouse is within the border tolerance zone
+        const nearLeft = Math.abs(x - nodeLeft) <= borderTolerance;
+        const nearRight = Math.abs(x - nodeRight) <= borderTolerance;
+        const nearTop = Math.abs(y - nodeTop) <= borderTolerance;
+        const nearBottom = Math.abs(y - nodeBottom) <= borderTolerance;
+
+        // Check if mouse is within the node bounds (including tolerance)
+        const withinHorizontalBounds = x >= nodeLeft - borderTolerance && x <= nodeRight + borderTolerance;
+        const withinVerticalBounds = y >= nodeTop - borderTolerance && y <= nodeBottom + borderTolerance;
+
+        // Corner resize handles (check corners first as they're more specific)
+        if (nearTop && nearLeft &&
+            x >= nodeLeft - borderTolerance && x <= nodeLeft + cornerSize &&
+            y >= nodeTop - borderTolerance && y <= nodeTop + cornerSize) {
+            return 'top-left';
+        }
+
+        if (nearTop && nearRight &&
+            x >= nodeRight - cornerSize && x <= nodeRight + borderTolerance &&
+            y >= nodeTop - borderTolerance && y <= nodeTop + cornerSize) {
+            return 'top-right';
+        }
+
+        if (nearBottom && nearLeft &&
+            x >= nodeLeft - borderTolerance && x <= nodeLeft + cornerSize &&
+            y >= nodeBottom - cornerSize && y <= nodeBottom + borderTolerance) {
+            return 'bottom-left';
+        }
+
+        if (nearBottom && nearRight &&
+            x >= nodeRight - cornerSize && x <= nodeRight + borderTolerance &&
+            y >= nodeBottom - cornerSize && y <= nodeBottom + borderTolerance) {
+            return 'bottom-right';
+        }
+
+        // Edge resize handles
+        if (nearTop && withinHorizontalBounds &&
+            x > nodeLeft + cornerSize && x < nodeRight - cornerSize) {
+            return 'top';
+        }
+
+        if (nearBottom && withinHorizontalBounds &&
+            x > nodeLeft + cornerSize && x < nodeRight - cornerSize) {
+            return 'bottom';
+        }
+
+        if (nearLeft && withinVerticalBounds &&
+            y > nodeTop + cornerSize && y < nodeBottom - cornerSize) {
+            return 'left';
+        }
+
+        if (nearRight && withinVerticalBounds &&
+            y > nodeTop + cornerSize && y < nodeBottom - cornerSize) {
+            return 'right';
+        }
+
         return null;
     }
     
@@ -706,9 +846,14 @@ class InfiniteCanvas {
             // Only reset manual resize flag if the node wasn't manually resized
             if (!this.editingNode.manuallyResized) {
                 // Auto-size for nodes that haven't been manually resized using markdown-aware calculation
-                const padding = 16;
+                const margins = {
+                    top: 20,    // Increased top margin for better visual balance
+                    bottom: 12, // Bottom margin
+                    left: 12,   // Left margin
+                    right: 12   // Right margin
+                };
                 const minHeight = 40;
-                const requiredHeight = Math.max(minHeight, calculateMarkdownHeight(this.ctx, this.editingNode.text, this.editingNode.width, padding));
+                const requiredHeight = Math.max(minHeight, calculateMarkdownHeight(this.ctx, this.editingNode.text, this.editingNode.width, margins));
                 this.editingNode.height = requiredHeight;
             }
             

@@ -1,10 +1,18 @@
 // Canvas markdown renderer - renders parsed markdown to canvas
 import { parseMarkdown } from './markdownParser.js';
 
-export function renderMarkdownToCanvas(ctx, text, x, y, maxWidth, nodeHeight, padding = 16) {
+export function renderMarkdownToCanvas(ctx, text, x, y, maxWidth, nodeHeight, margins = 16) {
+    // Handle both old padding format and new margins object
+    const marginConfig = typeof margins === 'object' ? margins : {
+        top: margins / 2,
+        bottom: margins / 2,
+        left: margins / 2,
+        right: margins / 2
+    };
+
     const parsed = parseMarkdown(text);
-    let currentY = y + padding / 2;
-    const maxY = y + nodeHeight - padding / 2;
+    let currentY = y + marginConfig.top;
+    const maxY = y + nodeHeight - marginConfig.bottom;
     
     // Save original context state
     ctx.save();
@@ -30,10 +38,10 @@ export function renderMarkdownToCanvas(ctx, text, x, y, maxWidth, nodeHeight, pa
         
         if (Array.isArray(item.content)) {
             // Handle inline formatted content
-            currentY = renderInlineFormattedText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY);
+            currentY = renderInlineFormattedText(ctx, item, x, currentY, maxWidth, marginConfig, lineHeight, maxY);
         } else {
             // Handle simple content
-            currentY = renderSimpleText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY);
+            currentY = renderSimpleText(ctx, item, x, currentY, maxWidth, marginConfig, lineHeight, maxY);
         }
     });
     
@@ -43,30 +51,30 @@ export function renderMarkdownToCanvas(ctx, text, x, y, maxWidth, nodeHeight, pa
     return currentY - y; // Return total height used
 }
 
-function renderSimpleText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY) {
+function renderSimpleText(ctx, item, x, currentY, maxWidth, margins, lineHeight, maxY) {
     // Set font properties
     const font = `${item.fontWeight} ${item.fontStyle} ${item.fontSize}px Arial`;
     ctx.font = font;
     ctx.fillStyle = '#333';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    
+
     // Handle different text types
     if (item.type === 'list') {
-        return renderListItem(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY);
+        return renderListItem(ctx, item, x, currentY, maxWidth, margins, lineHeight, maxY);
     } else {
-        return renderRegularText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY);
+        return renderRegularText(ctx, item, x, currentY, maxWidth, margins, lineHeight, maxY);
     }
 }
 
-function renderRegularText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY) {
-    const effectiveMaxWidth = maxWidth - padding;
-    const textX = x + padding / 2;
+function renderRegularText(ctx, item, x, currentY, maxWidth, margins, lineHeight, maxY) {
+    const effectiveMaxWidth = maxWidth - margins.left - margins.right;
+    const textX = x + margins.left;
 
     // Handle both string content and array content (inline formatting)
     if (Array.isArray(item.content)) {
         // For inline formatted content, we need to render each segment with its own formatting
-        return renderInlineFormattedText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY);
+        return renderInlineFormattedText(ctx, item, x, currentY, maxWidth, margins, lineHeight, maxY);
     } else {
         // For simple string content, wrap and render normally
         const lines = wrapTextForRendering(ctx, item.content, effectiveMaxWidth);
@@ -82,10 +90,10 @@ function renderRegularText(ctx, item, x, currentY, maxWidth, padding, lineHeight
     }
 }
 
-function renderListItem(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY) {
-    const bulletX = x + padding / 2;
+function renderListItem(ctx, item, x, currentY, maxWidth, margins, lineHeight, maxY) {
+    const bulletX = x + margins.left;
     const textX = bulletX + 20;
-    const effectiveMaxWidth = maxWidth - padding - 20;
+    const effectiveMaxWidth = maxWidth - margins.left - margins.right - 20;
 
     // Draw bullet point
     ctx.fillText(item.bullet, bulletX, currentY);
@@ -93,7 +101,7 @@ function renderListItem(ctx, item, x, currentY, maxWidth, padding, lineHeight, m
     // Handle both string content and array content (inline formatting)
     if (Array.isArray(item.content)) {
         // For inline formatted content, render with formatting
-        return renderInlineFormattedText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY);
+        return renderInlineFormattedText(ctx, item, x, currentY, maxWidth, margins, lineHeight, maxY);
     } else {
         // For simple string content, wrap and render normally
         const lines = wrapTextForRendering(ctx, item.content, effectiveMaxWidth);
@@ -109,13 +117,13 @@ function renderListItem(ctx, item, x, currentY, maxWidth, padding, lineHeight, m
     }
 }
 
-function renderInlineFormattedText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY) {
-    const effectiveMaxWidth = maxWidth - padding;
-    let textX = x + padding / 2;
+function renderInlineFormattedText(ctx, item, x, currentY, maxWidth, margins, lineHeight, maxY) {
+    const effectiveMaxWidth = maxWidth - margins.left - margins.right;
+    let textX = x + margins.left;
 
     // Handle list items with inline formatting
     if (item.type === 'list') {
-        const bulletX = x + padding / 2;
+        const bulletX = x + margins.left;
         textX = bulletX + 20;
 
         // Draw bullet point

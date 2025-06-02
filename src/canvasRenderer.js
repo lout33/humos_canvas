@@ -58,11 +58,19 @@ export function wrapText(ctx, text, maxWidth) {
 
 export function drawNode(ctx, node) {
     const { x, y, width, text, isSelected } = node;
-    const padding = 16;
+
+    // Enhanced margin configuration for better text spacing
+    const margins = {
+        top: 20,    // Increased top margin for better visual balance
+        bottom: 12, // Bottom margin
+        left: 12,   // Left margin
+        right: 12   // Right margin
+    };
+
     const minHeight = 40;
 
-    // Calculate required height based on markdown content
-    const requiredHeight = Math.max(minHeight, calculateMarkdownHeight(ctx, text, width, padding));
+    // Calculate required height based on markdown content with new margins
+    const requiredHeight = Math.max(minHeight, calculateMarkdownHeight(ctx, text, width, margins));
 
     // Only auto-adjust height if node hasn't been manually resized
     if (!node.manuallyResized && node.height !== requiredHeight) {
@@ -85,8 +93,8 @@ export function drawNode(ctx, node) {
         drawResizeHandles(ctx, node);
     }
 
-    // Render markdown content
-    renderMarkdownToCanvas(ctx, text, x, y, width, height, padding);
+    // Render markdown content with enhanced margins
+    renderMarkdownToCanvas(ctx, text, x, y, width, height, margins);
 }
 
 export function drawResizeHandles(ctx, node) {
