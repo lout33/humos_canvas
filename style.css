@@ -209,6 +209,35 @@ body {
     border-top-color: #14a085;
 }
 
+/* Selection status indicator */
+.selection-status {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #ffffff;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 1500;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.2s ease;
+}
+
+.selection-status.hidden {
+    display: none;
+}
+
+.selection-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #9ca3af;
+    font-weight: normal;
+}
+
 /* Utility classes */
 .hidden {
     display: none;

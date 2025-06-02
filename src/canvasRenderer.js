@@ -307,13 +307,13 @@ export function drawArrowhead(ctx, x, y, angle) {
 
 export function drawConnectionPreview(ctx, connectionStart, lastMouseX, lastMouseY, offsetX, offsetY, scale) {
     if (!connectionStart) return;
-    
+
     const canvasX = (lastMouseX - offsetX) / scale;
     const canvasY = (lastMouseY - offsetY) / scale;
-    
+
     const fromX = connectionStart.x + connectionStart.width / 2;
     const fromY = connectionStart.y + connectionStart.height / 2;
-    
+
     // Draw dashed preview line
     ctx.strokeStyle = '#2196f3';
     ctx.lineWidth = 2;
@@ -322,5 +322,25 @@ export function drawConnectionPreview(ctx, connectionStart, lastMouseX, lastMous
     ctx.moveTo(fromX, fromY);
     ctx.lineTo(canvasX, canvasY);
     ctx.stroke();
+    ctx.setLineDash([]);
+}
+
+export function drawSelectionRectangle(ctx, selectionStart, selectionEnd) {
+    if (!selectionStart || !selectionEnd) return;
+
+    const x = Math.min(selectionStart.x, selectionEnd.x);
+    const y = Math.min(selectionStart.y, selectionEnd.y);
+    const width = Math.abs(selectionEnd.x - selectionStart.x);
+    const height = Math.abs(selectionEnd.y - selectionStart.y);
+
+    // Draw selection rectangle background
+    ctx.fillStyle = 'rgba(66, 153, 225, 0.1)';
+    ctx.fillRect(x, y, width, height);
+
+    // Draw selection rectangle border
+    ctx.strokeStyle = '#4299e1';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(x, y, width, height);
     ctx.setLineDash([]);
 }

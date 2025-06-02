@@ -4,7 +4,8 @@ import {
     drawGrid,
     drawNode,
     drawConnection,
-    drawConnectionPreview
+    drawConnectionPreview,
+    drawSelectionRectangle
 } from './canvasRenderer.js';
 
 import { calculateMarkdownHeight } from './markdownParser.js';
@@ -26,7 +27,7 @@ class InfiniteCanvas {
         this.scale = 1.0;
         this.nodes = [];
         this.connections = []; // Array to store connections between nodes
-        this.selectedNode = null;
+        this.selectedNodes = []; // Array to store multiple selected nodes
         this.isDragging = false;
         this.dragStartX = 0;
         this.dragStartY = 0;
@@ -36,6 +37,9 @@ class InfiniteCanvas {
         this.isResizing = false; // True when resizing a node
         this.resizeHandle = null; // Which resize handle is being dragged
         this.resizeTarget = null; // Node being resized
+        this.isSelecting = false; // True when drawing selection rectangle
+        this.selectionStart = { x: 0, y: 0 }; // Start point of selection rectangle
+        this.selectionEnd = { x: 0, y: 0 }; // End point of selection rectangle
         
         // Node editing
         this.editingNode = null;
@@ -210,14 +214,15 @@ class InfiniteCanvas {
         const tooltip = document.getElementById('generateIdeasTooltip');
         const btn = document.getElementById('generateIdeasBtn');
 
-        if (this.selectedNode && this.apiKey) {
-            // Position tooltip above the selected node
+        // Only show generate button for single node selection
+        if (this.selectedNodes.length === 1 && this.apiKey) {
+            const selectedNode = this.selectedNodes[0];
             const rect = this.canvas.getBoundingClientRect();
-            const nodeScreenX = rect.left + (this.selectedNode.x * this.scale) + this.offsetX;
-            const nodeScreenY = rect.top + (this.selectedNode.y * this.scale) + this.offsetY;
 
-            // Position tooltip above the node with some padding
-            const tooltipX = nodeScreenX + (this.selectedNode.width * this.scale) / 2;
+            // Position tooltip above the selected node
+            const nodeScreenX = rect.left + (selectedNode.x * this.scale) + this.offsetX;
+            const nodeScreenY = rect.top + (selectedNode.y * this.scale) + this.offsetY;
+            const tooltipX = nodeScreenX + (selectedNode.width * this.scale) / 2;
             const tooltipY = nodeScreenY - 50; // 50px above the node
 
             tooltip.style.left = `${tooltipX}px`;
@@ -231,6 +236,26 @@ class InfiniteCanvas {
             btn.textContent = this.isGeneratingAI ? '⏳ Generating...' : '🤖 Generate Ideas';
         } else {
             tooltip.classList.add('hidden');
+        }
+    }
+
+    updateSelectionStatus() {
+        const statusElement = document.getElementById('selectionStatus');
+        const countElement = document.getElementById('selectionCount');
+        const hintElement = document.getElementById('selectionHint');
+
+        if (this.selectedNodes.length > 0) {
+            statusElement.classList.remove('hidden');
+            countElement.textContent = this.selectedNodes.length;
+
+            if (this.selectedNodes.length > 1) {
+                hintElement.classList.remove('hidden');
+                hintElement.textContent = 'Select a single node to generate AI ideas';
+            } else {
+                hintElement.classList.add('hidden');
+            }
+        } else {
+            statusElement.classList.add('hidden');
         }
     }
     
@@ -342,23 +367,28 @@ class InfiniteCanvas {
     // Drawing functions
     draw() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
+
         this.ctx.save();
         this.ctx.translate(this.offsetX, this.offsetY);
         this.ctx.scale(this.scale, this.scale);
-        
+
         // Draw grid using imported function
         drawGrid(this.ctx, this.offsetX, this.offsetY, this.scale, this.canvas.width, this.canvas.height);
-        
+
         // Draw connections first (behind nodes) using imported function
         this.connections.forEach(connection => drawConnection(this.ctx, connection, this.nodes));
-        
+
         // Draw all nodes using imported function
         this.nodes.forEach(node => drawNode(this.ctx, node));
-        
+
         // Draw connection preview if connecting using imported function
         if (this.isConnecting && this.connectionStart) {
             drawConnectionPreview(this.ctx, this.connectionStart, this.lastMouseX || 0, this.lastMouseY || 0, this.offsetX, this.offsetY, this.scale);
+        }
+
+        // Draw selection rectangle if selecting
+        if (this.isSelecting) {
+            drawSelectionRectangle(this.ctx, this.selectionStart, this.selectionEnd);
         }
 
         this.ctx.restore();
@@ -373,64 +403,100 @@ class InfiniteCanvas {
         const rect = this.canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
-        
+
         // Store mouse position for connection preview
         this.lastMouseX = mouseX;
         this.lastMouseY = mouseY;
-        
+
         // Convert to canvas coordinates
         const canvasX = (mouseX - this.offsetX) / this.scale;
         const canvasY = (mouseY - this.offsetY) / this.scale;
-        
+
         // Check if clicking on a node
         const clickedNode = this.getNodeAtPoint(canvasX, canvasY);
-        
+
         if (clickedNode) {
             // Check for border-based resize first (works on any node)
             const borderResizeHandle = this.getBorderResizeHandle(clickedNode, canvasX, canvasY);
 
             if (borderResizeHandle) {
-                // Start border-based resizing
-                this.selectNode(clickedNode); // Select the node when starting to resize
+                // Start border-based resizing - only works on single selection
+                if (this.selectedNodes.length > 1) {
+                    this.selectNode(clickedNode);
+                } else if (!clickedNode.isSelected) {
+                    this.selectNode(clickedNode);
+                }
                 this.isResizing = true;
                 this.resizeHandle = borderResizeHandle;
                 this.resizeTarget = clickedNode;
                 this.setCursorForResize(borderResizeHandle);
             } else {
-                this.selectNode(clickedNode);
-
-                // Check for traditional resize handles on selected nodes
-                const resizeHandle = this.getResizeHandle(clickedNode, canvasX, canvasY);
-
-                if (resizeHandle) {
-                    // Start traditional resizing
-                    this.isResizing = true;
-                    this.resizeHandle = resizeHandle;
-                    this.resizeTarget = clickedNode;
-                    this.setCursorForResize(resizeHandle);
-                } else if (e.ctrlKey || e.metaKey) {
-                    // Connection mode
-                    this.isConnecting = true;
-                    this.connectionStart = clickedNode;
-                    this.canvas.style.cursor = 'crosshair';
+                // Handle multi-selection with Ctrl/Cmd
+                if (e.ctrlKey || e.metaKey) {
+                    if (clickedNode.isSelected) {
+                        this.removeFromSelection(clickedNode);
+                    } else {
+                        this.addToSelection(clickedNode);
+                    }
                 } else {
-                    // Regular drag
-                    this.dragTarget = clickedNode;
+                    // Single selection or select if not already selected
+                    if (!clickedNode.isSelected) {
+                        this.selectNode(clickedNode);
+                    }
+                }
+
+                // Check for traditional resize handles on selected nodes (only for single selection)
+                if (this.selectedNodes.length === 1 && clickedNode.isSelected) {
+                    const resizeHandle = this.getResizeHandle(clickedNode, canvasX, canvasY);
+
+                    if (resizeHandle) {
+                        // Start traditional resizing
+                        this.isResizing = true;
+                        this.resizeHandle = resizeHandle;
+                        this.resizeTarget = clickedNode;
+                        this.setCursorForResize(resizeHandle);
+                    } else if (e.ctrlKey || e.metaKey) {
+                        // Connection mode
+                        this.isConnecting = true;
+                        this.connectionStart = clickedNode;
+                        this.canvas.style.cursor = 'crosshair';
+                    } else {
+                        // Regular drag - set drag target to all selected nodes
+                        this.dragTarget = this.selectedNodes.length > 1 ? 'selectedNodes' : clickedNode;
+                    }
+                } else if (!(e.ctrlKey || e.metaKey)) {
+                    // Regular drag for multiple selected nodes
+                    this.dragTarget = this.selectedNodes.length > 1 ? 'selectedNodes' : clickedNode;
                 }
             }
         } else {
-            this.selectNode(null);
+            // Clicked on empty space - start selection rectangle or clear selection
+            if (!(e.ctrlKey || e.metaKey)) {
+                this.clearSelection();
+            }
+
+            // Start selection rectangle
+            this.isSelecting = true;
+            this.selectionStart = { x: canvasX, y: canvasY };
+            this.selectionEnd = { x: canvasX, y: canvasY };
             this.dragTarget = 'canvas';
         }
-        
-        if (!this.isConnecting && !this.isResizing) {
+
+        if (!this.isConnecting && !this.isResizing && !this.isSelecting) {
             this.isDragging = true;
             this.dragStartX = mouseX;
             this.dragStartY = mouseY;
-            
+
             if (this.dragTarget === 'canvas') {
                 this.canvas.style.cursor = 'grabbing';
             }
+        } else if (this.isSelecting) {
+            // Don't set isDragging for selection rectangle
+            this.canvas.style.cursor = 'crosshair';
+        } else if (!this.isConnecting && !this.isResizing) {
+            this.isDragging = true;
+            this.dragStartX = mouseX;
+            this.dragStartY = mouseY;
         }
     }
     
@@ -494,12 +560,19 @@ class InfiniteCanvas {
             }
         }
         
+        if (this.isSelecting) {
+            // Update selection rectangle
+            this.selectionEnd = { x: canvasX, y: canvasY };
+            this.draw();
+            return;
+        }
+
         if (this.isConnecting) {
             // Redraw to show connection preview
             this.draw();
             return;
         }
-        
+
         if (this.isResizing) {
             // Handle resizing
             const deltaX = mouseX - this.dragStartX;
@@ -581,8 +654,16 @@ class InfiniteCanvas {
             // Pan canvas
             this.offsetX += deltaX;
             this.offsetY += deltaY;
+        } else if (this.dragTarget === 'selectedNodes') {
+            // Drag all selected nodes
+            const scaledDeltaX = deltaX / this.scale;
+            const scaledDeltaY = deltaY / this.scale;
+            this.selectedNodes.forEach(node => {
+                node.x += scaledDeltaX;
+                node.y += scaledDeltaY;
+            });
         } else if (this.dragTarget && typeof this.dragTarget === 'object') {
-            // Drag node
+            // Drag single node
             this.dragTarget.x += deltaX / this.scale;
             this.dragTarget.y += deltaY / this.scale;
         }
@@ -594,21 +675,52 @@ class InfiniteCanvas {
     }
     
     onMouseUp(e) {
+        if (this.isSelecting) {
+            // Complete selection rectangle
+            this.isSelecting = false;
+
+            // Find nodes within selection rectangle
+            const rect = {
+                x: Math.min(this.selectionStart.x, this.selectionEnd.x),
+                y: Math.min(this.selectionStart.y, this.selectionEnd.y),
+                width: Math.abs(this.selectionEnd.x - this.selectionStart.x),
+                height: Math.abs(this.selectionEnd.y - this.selectionStart.y)
+            };
+
+            const nodesInSelection = this.nodes.filter(node => {
+                return node.x < rect.x + rect.width &&
+                       node.x + node.width > rect.x &&
+                       node.y < rect.y + rect.height &&
+                       node.y + node.height > rect.y;
+            });
+
+            // Add nodes to selection (or replace if not holding Ctrl/Cmd)
+            if (e.ctrlKey || e.metaKey) {
+                nodesInSelection.forEach(node => this.addToSelection(node));
+            } else {
+                this.selectNodes(nodesInSelection);
+            }
+
+            this.canvas.style.cursor = 'grab';
+            this.draw();
+            return;
+        }
+
         if (this.isConnecting) {
             // Complete connection if dropped on a different node
             const rect = this.canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
-            
+
             const canvasX = (mouseX - this.offsetX) / this.scale;
             const canvasY = (mouseY - this.offsetY) / this.scale;
-            
+
             const targetNode = this.getNodeAtPoint(canvasX, canvasY);
-            
+
             if (targetNode && targetNode !== this.connectionStart) {
                 this.createConnection(this.connectionStart, targetNode);
             }
-            
+
             // Reset connection state
             this.isConnecting = false;
             this.connectionStart = null;
@@ -616,7 +728,7 @@ class InfiniteCanvas {
             this.draw();
             return;
         }
-        
+
         if (this.isResizing) {
             // Complete resizing
             this.isResizing = false;
@@ -626,11 +738,11 @@ class InfiniteCanvas {
             this.saveToLocalStorage();
             return;
         }
-        
+
         this.isDragging = false;
         this.dragTarget = null;
         this.canvas.style.cursor = 'grab';
-        
+
         if (this.dragTarget !== 'canvas') {
             this.saveToLocalStorage();
         }
@@ -790,16 +902,89 @@ class InfiniteCanvas {
         return null;
     }
     
-    selectNode(node) {
-        this.nodes.forEach(n => n.isSelected = false);
-        if (node) {
-            node.isSelected = true;
-            this.selectedNode = node;
-        } else {
-            this.selectedNode = null;
+    // Selection management methods
+    selectNodes(nodes) {
+        this.clearSelection();
+        if (Array.isArray(nodes)) {
+            nodes.forEach(node => {
+                if (node) {
+                    node.isSelected = true;
+                    this.selectedNodes.push(node);
+                }
+            });
+        } else if (nodes) {
+            nodes.isSelected = true;
+            this.selectedNodes.push(nodes);
         }
         this.draw();
         this.updateGenerateIdeasTooltip();
+        this.updateSelectionStatus();
+    }
+
+    selectNode(node) {
+        this.selectNodes(node);
+    }
+
+    addToSelection(node) {
+        if (node && !this.selectedNodes.includes(node)) {
+            node.isSelected = true;
+            this.selectedNodes.push(node);
+            this.draw();
+            this.updateGenerateIdeasTooltip();
+            this.updateSelectionStatus();
+        }
+    }
+
+    removeFromSelection(node) {
+        if (node) {
+            node.isSelected = false;
+            const index = this.selectedNodes.indexOf(node);
+            if (index > -1) {
+                this.selectedNodes.splice(index, 1);
+            }
+            this.draw();
+            this.updateGenerateIdeasTooltip();
+            this.updateSelectionStatus();
+        }
+    }
+
+    clearSelection() {
+        this.nodes.forEach(n => n.isSelected = false);
+        this.selectedNodes = [];
+        this.draw();
+        this.updateGenerateIdeasTooltip();
+        this.updateSelectionStatus();
+    }
+
+    getSelectedNodes() {
+        return this.selectedNodes;
+    }
+
+    // Get bounding box of all selected nodes
+    getSelectionBounds() {
+        if (this.selectedNodes.length === 0) return null;
+
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+
+        this.selectedNodes.forEach(node => {
+            minX = Math.min(minX, node.x);
+            minY = Math.min(minY, node.y);
+            maxX = Math.max(maxX, node.x + node.width);
+            maxY = Math.max(maxY, node.y + node.height);
+        });
+
+        return {
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        };
+    }
+
+    // Backward compatibility - get first selected node
+    get selectedNode() {
+        return this.selectedNodes.length > 0 ? this.selectedNodes[0] : null;
     }
     
     createConnection(fromNode, toNode) {
@@ -946,9 +1131,14 @@ class InfiniteCanvas {
             return;
         }
 
-        // Check if a node is selected
-        if (!this.selectedNode) {
+        // Check if exactly one node is selected
+        if (this.selectedNodes.length === 0) {
             this.showNotification('Please select a node first to generate connected ideas', 'warning');
+            return;
+        }
+
+        if (this.selectedNodes.length > 1) {
+            this.showNotification('Please select only one node to generate ideas. AI generation works with single nodes.', 'warning');
             return;
         }
 
@@ -1292,6 +1482,9 @@ class InfiniteCanvas {
             return true;
         });
 
+        // Reset selection after validation
+        this.selectedNodes = [];
+
         console.log(`Validated ${this.nodes.length} nodes`); // Debug log
     }
 
@@ -1325,12 +1518,18 @@ class InfiniteCanvas {
         if (this.editingNode || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
             return;
         }
-        
+
         switch(e.key) {
             case 'Delete':
             case 'Backspace':
-                if (this.selectedNode) {
-                    this.deleteNode(this.selectedNode);
+                if (this.selectedNodes.length > 0) {
+                    this.deleteSelectedNodes();
+                }
+                break;
+            case 'a':
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    this.selectAllNodes();
                 }
                 break;
             case 'z':
@@ -1351,25 +1550,55 @@ class InfiniteCanvas {
         }
     }
     
-    // Delete node and its connections
+    // Select all nodes
+    selectAllNodes() {
+        this.selectNodes(this.nodes);
+    }
+
+    // Delete multiple selected nodes and their connections
+    deleteSelectedNodes() {
+        if (this.selectedNodes.length === 0) return;
+
+        // Save state for undo
+        this.saveState();
+
+        // Get IDs of nodes to delete
+        const nodeIdsToDelete = new Set(this.selectedNodes.map(node => node.id));
+
+        // Remove the nodes
+        this.nodes = this.nodes.filter(node => !nodeIdsToDelete.has(node.id));
+
+        // Remove all connections involving these nodes
+        this.connections = this.connections.filter(
+            conn => !nodeIdsToDelete.has(conn.from) && !nodeIdsToDelete.has(conn.to)
+        );
+
+        // Clear selection
+        this.clearSelection();
+
+        this.saveToLocalStorage();
+        this.draw();
+    }
+
+    // Delete single node and its connections (backward compatibility)
     deleteNode(node) {
         const nodeIndex = this.nodes.findIndex(n => n.id === node.id);
         if (nodeIndex === -1) return;
-        
+
         // Save state for undo
         this.saveState();
-        
+
         // Remove the node
         this.nodes.splice(nodeIndex, 1);
-        
+
         // Remove all connections involving this node
         this.connections = this.connections.filter(
             conn => conn.from !== node.id && conn.to !== node.id
         );
-        
+
         // Clear selection
-        this.selectedNode = null;
-        
+        this.clearSelection();
+
         this.saveToLocalStorage();
         this.draw();
     }
@@ -1416,7 +1645,7 @@ class InfiniteCanvas {
     restoreState(state) {
         this.nodes = JSON.parse(JSON.stringify(state.nodes));
         this.connections = JSON.parse(JSON.stringify(state.connections));
-        this.selectedNode = null;
+        this.clearSelection();
         this.saveToLocalStorage();
         this.draw();
         this.updateUndoRedoButtons();
