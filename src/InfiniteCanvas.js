@@ -1,3 +1,4 @@
+
 // Canvas MVP - Core functionality with OpenAI integration
 import {
     drawGrid,
@@ -765,30 +766,31 @@ class InfiniteCanvas {
             return;
         }
 
+        // Capture the selected node at the start to preserve it during async operation
+        const sourceNode = this.selectedNode;
+
         try {
             this.isGeneratingAI = true;
 
             // Update tooltip button to show loading state
             this.updateGenerateIdeasTooltip();
 
-            console.log('🎯 Generating ideas for:', this.selectedNode.text);
+            console.log('🎯 Generating ideas for:', sourceNode.text);
 
             // Get connected nodes for conversation history
-            const connectedNodes = this.getConnectedNodes(this.selectedNode);
+            const connectedNodes = this.getConnectedNodes(sourceNode);
             console.log('📎 Connected nodes as conversation history:', connectedNodes.map(n => n.text));
 
             // Call the AI service to generate ideas with context
-            const ideas = await generateAIIdeas(this.apiKey, this.baseURL, this.selectedNode.text, connectedNodes);
-            
+            const ideas = await generateAIIdeas(this.apiKey, this.baseURL, sourceNode.text, connectedNodes);
+
             // Save state for undo
             this.saveState();
-            
-            // Create nodes for each idea
-            const sourceNode = this.selectedNode;
 
-            // Safety check: make sure we still have a selected node
-            if (!sourceNode) {
-                throw new Error('Selected node was lost during AI generation');
+            // Verify the source node still exists in our nodes array (in case it was deleted during generation)
+            const nodeStillExists = this.nodes.find(n => n.id === sourceNode.id);
+            if (!nodeStillExists) {
+                throw new Error('Source node was deleted during AI generation');
             }
 
             const createdNodes = [];
