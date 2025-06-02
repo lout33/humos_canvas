@@ -61,142 +61,110 @@ function renderSimpleText(ctx, item, x, currentY, maxWidth, padding, lineHeight,
 
 function renderRegularText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY) {
     const effectiveMaxWidth = maxWidth - padding;
-    const lines = wrapTextForRendering(ctx, item.content, effectiveMaxWidth);
-    
-    lines.forEach(line => {
-        if (currentY + lineHeight > maxY) return;
-        
-        const textX = x + padding / 2;
-        ctx.fillText(line, textX, currentY);
-        currentY += lineHeight;
-    });
-    
-    return currentY;
+    const textX = x + padding / 2;
+
+    // Handle both string content and array content (inline formatting)
+    if (Array.isArray(item.content)) {
+        // For inline formatted content, we need to render each segment with its own formatting
+        return renderInlineFormattedText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY);
+    } else {
+        // For simple string content, wrap and render normally
+        const lines = wrapTextForRendering(ctx, item.content, effectiveMaxWidth);
+
+        lines.forEach(line => {
+            if (currentY + lineHeight > maxY) return;
+
+            ctx.fillText(line, textX, currentY);
+            currentY += lineHeight;
+        });
+
+        return currentY;
+    }
 }
 
 function renderListItem(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY) {
     const bulletX = x + padding / 2;
     const textX = bulletX + 20;
     const effectiveMaxWidth = maxWidth - padding - 20;
-    
+
     // Draw bullet point
     ctx.fillText(item.bullet, bulletX, currentY);
-    
-    // Draw list text
-    const lines = wrapTextForRendering(ctx, item.content, effectiveMaxWidth);
-    
-    lines.forEach((line) => {
-        if (currentY + lineHeight > maxY) return;
-        
-        ctx.fillText(line, textX, currentY);
-        currentY += lineHeight;
-    });
-    
-    return currentY;
+
+    // Handle both string content and array content (inline formatting)
+    if (Array.isArray(item.content)) {
+        // For inline formatted content, render with formatting
+        return renderInlineFormattedText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY);
+    } else {
+        // For simple string content, wrap and render normally
+        const lines = wrapTextForRendering(ctx, item.content, effectiveMaxWidth);
+
+        lines.forEach((line) => {
+            if (currentY + lineHeight > maxY) return;
+
+            ctx.fillText(line, textX, currentY);
+            currentY += lineHeight;
+        });
+
+        return currentY;
+    }
 }
 
 function renderInlineFormattedText(ctx, item, x, currentY, maxWidth, padding, lineHeight, maxY) {
     const effectiveMaxWidth = maxWidth - padding;
     let textX = x + padding / 2;
-    
+
     // Handle list items with inline formatting
     if (item.type === 'list') {
         const bulletX = x + padding / 2;
         textX = bulletX + 20;
-        
+
         // Draw bullet point
         ctx.font = `${item.fontWeight} ${item.fontStyle} ${item.fontSize}px Arial`;
         ctx.fillStyle = '#333';
         ctx.fillText(item.bullet, bulletX, currentY);
     }
-    
-    // Render each formatted segment
+
+    // Simplified approach: render each segment on the same line if possible
     const segments = item.content;
-    let lineText = '';
-    let segmentIndex = 0;
-    
-    while (segmentIndex < segments.length && currentY + lineHeight <= maxY) {
-        const segment = segments[segmentIndex];
-        
-        // Set font for this segment
+    let currentLineX = textX;
+    let maxLineWidth = effectiveMaxWidth - (item.type === 'list' ? 20 : 0);
+
+    // First, try to render all segments on one line
+    let totalWidth = 0;
+    segments.forEach(segment => {
         setFontForSegment(ctx, segment, item.fontSize);
-        
-        // Try to fit this segment on the current line
-        const testText = lineText + segment.text;
-        const metrics = ctx.measureText(testText);
-        
-        if (metrics.width <= effectiveMaxWidth - (item.type === 'list' ? 20 : 0)) {
-            // Segment fits, add it to current line
-            lineText += segment.text;
-            segmentIndex++;
-        } else {
-            // Segment doesn't fit, render current line and start new one
-            if (lineText) {
-                renderFormattedLine(ctx, segments.slice(0, segmentIndex), textX, currentY, item.fontSize);
-                currentY += lineHeight;
-                lineText = '';
-                
-                // Reset to render remaining segments
-                continue;
-            } else {
-                // Single segment is too long, break it
-                const words = segment.text.split(' ');
-                let wordIndex = 0;
-                
-                while (wordIndex < words.length && currentY + lineHeight <= maxY) {
-                    let lineWords = [];
-                    let testLine = '';
-                    
-                    while (wordIndex < words.length) {
-                        const testWord = testLine + (testLine ? ' ' : '') + words[wordIndex];
-                        ctx.font = getFontForSegment(segment, item.fontSize);
-                        const metrics = ctx.measureText(testWord);
-                        
-                        if (metrics.width <= effectiveMaxWidth - (item.type === 'list' ? 20 : 0)) {
-                            lineWords.push(words[wordIndex]);
-                            testLine = testWord;
-                            wordIndex++;
-                        } else {
-                            break;
-                        }
-                    }
-                    
-                    if (lineWords.length > 0) {
-                        const lineSegment = { ...segment, text: lineWords.join(' ') };
-                        renderFormattedLine(ctx, [lineSegment], textX, currentY, item.fontSize);
-                        currentY += lineHeight;
-                    } else {
-                        // Even single word doesn't fit, force it
-                        const lineSegment = { ...segment, text: words[wordIndex] };
-                        renderFormattedLine(ctx, [lineSegment], textX, currentY, item.fontSize);
-                        currentY += lineHeight;
-                        wordIndex++;
-                    }
-                }
-                
-                segmentIndex++;
-            }
-        }
+        totalWidth += ctx.measureText(segment.text).width;
+    });
+
+    if (totalWidth <= maxLineWidth) {
+        // All segments fit on one line
+        segments.forEach(segment => {
+            setFontForSegment(ctx, segment, item.fontSize);
+            ctx.fillText(segment.text, currentLineX, currentY);
+            currentLineX += ctx.measureText(segment.text).width;
+        });
+        return currentY + lineHeight;
+    } else {
+        // Need to wrap - fall back to simple text rendering
+        const fullText = segments.map(segment => segment.text).join('');
+        const lines = wrapTextForRendering(ctx, fullText, maxLineWidth);
+
+        // Set font for the whole text block
+        ctx.font = `${item.fontWeight} ${item.fontStyle} ${item.fontSize}px Arial`;
+        ctx.fillStyle = '#333';
+
+        lines.forEach(line => {
+            if (currentY + lineHeight > maxY) return;
+
+            ctx.fillText(line, textX, currentY);
+            currentY += lineHeight;
+        });
+
+        return currentY;
     }
-    
-    // Render any remaining text on the current line
-    if (lineText && currentY + lineHeight <= maxY) {
-        renderFormattedLine(ctx, segments.slice(0, segmentIndex), textX, currentY, item.fontSize);
-        currentY += lineHeight;
-    }
-    
-    return currentY;
 }
 
-function renderFormattedLine(ctx, segments, x, y, baseFontSize) {
-    let currentX = x;
-    
-    segments.forEach(segment => {
-        setFontForSegment(ctx, segment, baseFontSize);
-        ctx.fillText(segment.text, currentX, y);
-        currentX += ctx.measureText(segment.text).width;
-    });
-}
+
 
 function setFontForSegment(ctx, segment, baseFontSize) {
     ctx.font = getFontForSegment(segment, baseFontSize);
@@ -227,15 +195,22 @@ function getFontForSegment(segment, baseFontSize) {
 
 function wrapTextForRendering(ctx, text, maxWidth) {
     if (!text) return [''];
-    
-    const words = text.split(' ');
+
+    // Handle both string and array content
+    let textToWrap = text;
+    if (Array.isArray(text)) {
+        // If it's an array of segments (inline formatting), join them for wrapping
+        textToWrap = text.map(segment => segment.text).join('');
+    }
+
+    const words = textToWrap.split(' ');
     const lines = [];
     let currentLine = '';
-    
+
     words.forEach(word => {
         const testLine = currentLine + (currentLine ? ' ' : '') + word;
         const metrics = ctx.measureText(testLine);
-        
+
         if (metrics.width > maxWidth && currentLine) {
             lines.push(currentLine);
             currentLine = word;
@@ -243,10 +218,10 @@ function wrapTextForRendering(ctx, text, maxWidth) {
             currentLine = testLine;
         }
     });
-    
+
     if (currentLine) {
         lines.push(currentLine);
     }
-    
+
     return lines.length > 0 ? lines : [''];
 }

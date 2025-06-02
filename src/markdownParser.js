@@ -182,18 +182,22 @@ export function calculateMarkdownHeight(ctx, text, maxWidth, padding = 16) {
 // Enhanced text wrapping that considers formatting
 function wrapTextForMarkdown(ctx, text, maxWidth, item) {
     if (!text) return [''];
-    
+
+    // Set the correct font for measurement
+    const font = `${item.fontWeight} ${item.fontStyle} ${item.fontSize}px Arial`;
+    ctx.font = font;
+
     const words = text.split(' ');
     const lines = [];
     let currentLine = '';
-    
+
     // Account for list bullets
     const effectiveMaxWidth = item.type === 'list' ? maxWidth - 20 : maxWidth;
-    
+
     words.forEach(word => {
         const testLine = currentLine + (currentLine ? ' ' : '') + word;
         const metrics = ctx.measureText(testLine);
-        
+
         if (metrics.width > effectiveMaxWidth && currentLine) {
             lines.push(currentLine);
             currentLine = word;
@@ -201,10 +205,10 @@ function wrapTextForMarkdown(ctx, text, maxWidth, item) {
             currentLine = testLine;
         }
     });
-    
+
     if (currentLine) {
         lines.push(currentLine);
     }
-    
+
     return lines.length > 0 ? lines : [''];
 }
