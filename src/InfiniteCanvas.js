@@ -9,6 +9,8 @@ import {
     wrapText
 } from './canvasRenderer.js';
 
+import { calculateMarkdownHeight } from './markdownParser.js';
+
 import {
     generateAIIdeas,
     getProviderName,
@@ -703,12 +705,10 @@ class InfiniteCanvas {
             
             // Only reset manual resize flag if the node wasn't manually resized
             if (!this.editingNode.manuallyResized) {
-                // Auto-size for nodes that haven't been manually resized
-                const lines = wrapText(this.ctx, this.editingNode.text, this.editingNode.width - 16);
-                const lineHeight = 16;
+                // Auto-size for nodes that haven't been manually resized using markdown-aware calculation
                 const padding = 16;
                 const minHeight = 40;
-                const requiredHeight = Math.max(minHeight, lines.length * lineHeight + padding);
+                const requiredHeight = Math.max(minHeight, calculateMarkdownHeight(this.ctx, this.editingNode.text, this.editingNode.width, padding));
                 this.editingNode.height = requiredHeight;
             }
             

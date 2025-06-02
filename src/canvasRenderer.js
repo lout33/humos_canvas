@@ -1,6 +1,9 @@
 // Canvas Renderer Module
 // Handles all drawing operations on the HTML5 canvas
 
+import { calculateMarkdownHeight } from './markdownParser.js';
+import { renderMarkdownToCanvas } from './markdownRenderer.js';
+
 export function drawGrid(ctx, offsetX, offsetY, scale, canvasWidth, canvasHeight) {
     const gridSize = 40;
     const startX = Math.floor(-offsetX / scale / gridSize) * gridSize;
@@ -55,51 +58,35 @@ export function wrapText(ctx, text, maxWidth) {
 
 export function drawNode(ctx, node) {
     const { x, y, width, text, isSelected } = node;
-    
-    // Calculate required height based on text content
-    const lines = wrapText(ctx, text, width - 16);
-    const lineHeight = 16;
     const padding = 16;
     const minHeight = 40;
-    const requiredHeight = Math.max(minHeight, lines.length * lineHeight + padding);
-    
+
+    // Calculate required height based on markdown content
+    const requiredHeight = Math.max(minHeight, calculateMarkdownHeight(ctx, text, width, padding));
+
     // Only auto-adjust height if node hasn't been manually resized
     if (!node.manuallyResized && node.height !== requiredHeight) {
         node.height = requiredHeight;
     }
-    
+
     const height = node.height;
-    
+
     // Draw node background
     ctx.fillStyle = isSelected ? '#e3f2fd' : '#ffffff';
     ctx.fillRect(x, y, width, height);
-    
+
     // Draw node border
     ctx.strokeStyle = isSelected ? '#2196f3' : '#ddd';
     ctx.lineWidth = isSelected ? 2 : 1;
     ctx.strokeRect(x, y, width, height);
-    
+
     // Draw resize handles if selected
     if (isSelected) {
         drawResizeHandles(ctx, node);
     }
-    
-    // Draw text with better positioning
-    ctx.fillStyle = '#333';
-    ctx.font = '14px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    
-    // Start text from top with padding
-    const textStartY = y + 8;
-    
-    lines.forEach((line, index) => {
-        const lineY = textStartY + index * lineHeight;
-        // Only draw line if it fits within the node height
-        if (lineY + lineHeight <= y + height - 8) {
-            ctx.fillText(line, x + width / 2, lineY);
-        }
-    });
+
+    // Render markdown content
+    renderMarkdownToCanvas(ctx, text, x, y, width, height, padding);
 }
 
 export function drawResizeHandles(ctx, node) {
