@@ -262,9 +262,33 @@ class InfiniteCanvas {
     }
     
     setupEventListeners() {
+        console.log('Setting up event listeners...');
+
         // Toolbar buttons
         document.getElementById('addNodeBtn').addEventListener('click', () => this.createNode());
-        document.getElementById('exportBtn').addEventListener('click', () => this.exportJSON());
+
+        const exportBtn = document.getElementById('exportBtn');
+        console.log('Export button found:', exportBtn); // Debug log
+        exportBtn.addEventListener('click', () => {
+            console.log('Export button event listener triggered'); // Debug log
+            this.exportJSON();
+        });
+
+        // Import button
+        const importBtn = document.getElementById('importBtn');
+        console.log('Import button found:', importBtn); // Debug log
+        importBtn.addEventListener('click', () => {
+            console.log('Import button event listener triggered'); // Debug log
+            this.importJSON();
+        });
+
+        // Hidden file input for import
+        const importFileInput = document.getElementById('importFileInput');
+        console.log('Import file input found:', importFileInput); // Debug log
+        importFileInput.addEventListener('change', (e) => {
+            console.log('File input change event triggered'); // Debug log
+            this.handleFileImport(e);
+        });
 
         // API Configuration button
         document.getElementById('configureApiBtn').addEventListener('click', () => this.showApiKeyModal());
@@ -1034,23 +1058,267 @@ class InfiniteCanvas {
     }
     
     exportJSON() {
-        const data = {
-            nodes: this.nodes,
-            connections: this.connections,
-            exportDate: new Date().toISOString()
-        };
-        
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'canvas-export.json';
-        a.click();
-        
-        URL.revokeObjectURL(url);
+        console.log('Export JSON button clicked!'); // Debug log
+
+        try {
+            const data = {
+                nodes: this.nodes,
+                connections: this.connections,
+                exportDate: new Date().toISOString()
+            };
+
+            console.log('Data to export:', data); // Debug log
+            console.log('Number of nodes:', this.nodes.length);
+            console.log('Number of connections:', this.connections.length);
+
+            // Check if Blob is supported
+            if (!window.Blob) {
+                throw new Error('Blob API not supported in this browser');
+            }
+
+            const jsonString = JSON.stringify(data, null, 2);
+            console.log('JSON string length:', jsonString.length);
+
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            console.log('Blob created:', blob);
+
+            // Check if URL.createObjectURL is supported
+            if (!window.URL || !window.URL.createObjectURL) {
+                throw new Error('URL.createObjectURL not supported in this browser');
+            }
+
+            const url = URL.createObjectURL(blob);
+            console.log('Object URL created:', url);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'canvas-export.json';
+            a.style.display = 'none'; // Hide the link
+
+            console.log('Download link created:', a);
+
+            document.body.appendChild(a); // Ensure the element is in the DOM
+            console.log('Link added to DOM');
+
+            // Try to trigger the download
+            try {
+                a.click();
+                console.log('Click triggered');
+            } catch (clickError) {
+                console.error('Error clicking download link:', clickError);
+                // Fallback: try dispatching a click event
+                const clickEvent = new MouseEvent('click', {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true
+                });
+                a.dispatchEvent(clickEvent);
+                console.log('Click event dispatched');
+            }
+
+            // Clean up after a short delay
+            setTimeout(() => {
+                if (a.parentNode) {
+                    document.body.removeChild(a);
+                    console.log('Link removed from DOM');
+                }
+                URL.revokeObjectURL(url);
+                console.log('Object URL revoked');
+            }, 100);
+
+            // Show success notification
+            this.showNotification('Canvas exported successfully!', 'success');
+            console.log('Export completed successfully'); // Debug log
+
+        } catch (error) {
+            console.error('Error during export:', error);
+            this.showNotification('Export failed: ' + error.message, 'error');
+        }
     }
-    
+
+    importJSON() {
+        console.log('Import JSON method called'); // Debug log
+
+        try {
+            // Trigger the hidden file input
+            const fileInput = document.getElementById('importFileInput');
+            if (!fileInput) {
+                throw new Error('File input element not found');
+            }
+
+            console.log('Triggering file input click'); // Debug log
+            fileInput.click();
+
+        } catch (error) {
+            console.error('Error during import trigger:', error);
+            this.showNotification('Import failed: ' + error.message, 'error');
+        }
+    }
+
+    handleFileImport(event) {
+        console.log('Handle file import called'); // Debug log
+
+        const file = event.target.files[0];
+        if (!file) {
+            console.log('No file selected'); // Debug log
+            return;
+        }
+
+        console.log('File selected:', file.name, file.type, file.size); // Debug log
+
+        // Validate file type
+        if (!file.type.includes('json') && !file.name.toLowerCase().endsWith('.json')) {
+            this.showNotification('Please select a valid JSON file', 'error');
+            return;
+        }
+
+        // Validate file size (max 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+            this.showNotification('File is too large. Maximum size is 10MB', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            try {
+                console.log('File read successfully'); // Debug log
+                const jsonData = JSON.parse(e.target.result);
+                console.log('JSON parsed successfully:', jsonData); // Debug log
+
+                this.loadCanvasData(jsonData);
+
+            } catch (parseError) {
+                console.error('Error parsing JSON:', parseError);
+                this.showNotification('Invalid JSON file format', 'error');
+            }
+        };
+
+        reader.onerror = () => {
+            console.error('Error reading file');
+            this.showNotification('Error reading file', 'error');
+        };
+
+        console.log('Starting file read'); // Debug log
+        reader.readAsText(file);
+
+        // Clear the file input so the same file can be selected again
+        event.target.value = '';
+    }
+
+    loadCanvasData(data) {
+        console.log('Loading canvas data:', data);
+
+        try {
+            // Validate the data structure
+            if (!data || typeof data !== 'object') {
+                throw new Error('Invalid data format - not an object');
+            }
+
+            // Check for required properties
+            if (!Array.isArray(data.nodes)) {
+                throw new Error('Invalid or missing nodes data - nodes must be an array');
+            }
+
+            if (!Array.isArray(data.connections)) {
+                throw new Error('Invalid or missing connections data - connections must be an array');
+            }
+
+            // Additional validation for data integrity
+            if (data.nodes.length === 0 && data.connections.length > 0) {
+                console.warn('Warning: Found connections but no nodes, connections will be removed');
+            }
+
+            // Save current state for undo before importing
+            this.saveState();
+
+            // Load the data
+            this.nodes = data.nodes || [];
+            this.connections = data.connections || [];
+
+            // Reset view state if provided
+            if (typeof data.offsetX === 'number') this.offsetX = data.offsetX;
+            if (typeof data.offsetY === 'number') this.offsetY = data.offsetY;
+            if (typeof data.scale === 'number') this.scale = data.scale;
+
+            // Clear selection
+            this.selectedNode = null;
+
+            // Validate and fix node data
+            this.validateAndFixNodes();
+
+            // Validate and fix connection data
+            this.validateAndFixConnections();
+
+            // Save to localStorage and redraw
+            this.saveToLocalStorage();
+            this.draw();
+            this.updateUndoRedoButtons();
+
+            // Show success message
+            const nodeCount = this.nodes.length;
+            const connectionCount = this.connections.length;
+            this.showNotification(
+                `Canvas imported successfully! Loaded ${nodeCount} nodes and ${connectionCount} connections.`,
+                'success'
+            );
+
+            console.log('Canvas data loaded successfully'); // Debug log
+
+        } catch (error) {
+            console.error('Error loading canvas data:', error);
+            this.showNotification('Failed to load canvas data: ' + error.message, 'error');
+        }
+    }
+
+    validateAndFixNodes() {
+        console.log('Validating nodes...'); // Debug log
+
+        this.nodes = this.nodes.filter(node => {
+            // Ensure required properties exist
+            if (!node.id || typeof node.text !== 'string') {
+                console.warn('Removing invalid node:', node);
+                return false;
+            }
+
+            // Set default values for missing properties
+            node.x = typeof node.x === 'number' ? node.x : 0;
+            node.y = typeof node.y === 'number' ? node.y : 0;
+            node.width = typeof node.width === 'number' ? node.width : 400;
+            node.height = typeof node.height === 'number' ? node.height : 60;
+            node.isSelected = false; // Always reset selection state
+
+            return true;
+        });
+
+        console.log(`Validated ${this.nodes.length} nodes`); // Debug log
+    }
+
+    validateAndFixConnections() {
+        console.log('Validating connections...'); // Debug log
+
+        // Get valid node IDs
+        const validNodeIds = new Set(this.nodes.map(node => node.id));
+
+        this.connections = this.connections.filter(connection => {
+            // Ensure connection has valid from and to node IDs
+            if (!connection.from || !connection.to) {
+                console.warn('Removing connection with missing from/to:', connection);
+                return false;
+            }
+
+            if (!validNodeIds.has(connection.from) || !validNodeIds.has(connection.to)) {
+                console.warn('Removing connection with invalid node references:', connection);
+                return false;
+            }
+
+            return true;
+        });
+
+        console.log(`Validated ${this.connections.length} connections`); // Debug log
+    }
+
     // Keyboard event handler
     onKeyDown(e) {
         // Don't handle keyboard events when editing text

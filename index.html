@@ -16,8 +16,12 @@
         <div class="floating-toolbar">
             <button id="addNodeBtn" class="toolbar-btn">Add Node</button>
             <button id="exportBtn" class="toolbar-btn">Export JSON</button>
+            <button id="importBtn" class="toolbar-btn">Import JSON</button>
             <button id="configureApiBtn" class="toolbar-btn">🔑 Configure API Keys</button>
         </div>
+
+        <!-- Hidden file input for import -->
+        <input type="file" id="importFileInput" accept=".json" style="display: none;">
 
         <!-- Generate Ideas tooltip (appears above selected nodes) -->
         <div id="generateIdeasTooltip" class="generate-ideas-tooltip hidden">
