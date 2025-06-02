@@ -774,26 +774,63 @@ class InfiniteCanvas {
     
     onWheel(e) {
         e.preventDefault();
-        
+
         const rect = this.canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
         const mouseY = e.clientY - rect.top;
-        
+
+        // Detect trackpad vs mouse wheel
+        // Trackpad typically has smaller deltaY values and often has deltaX
+        const isTrackpad = Math.abs(e.deltaY) < 50 || Math.abs(e.deltaX) > 0;
+
+        // Handle trackpad pinch-to-zoom (detected by ctrlKey on Mac)
+        if (e.ctrlKey && isTrackpad) {
+            // Pinch gesture = zoom
+            const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05; // More sensitive for pinch
+            const newScale = Math.max(0.1, Math.min(3.0, this.scale * zoomFactor));
+
+            // Zoom towards mouse position
+            const beforeZoomX = (mouseX - this.offsetX) / this.scale;
+            const beforeZoomY = (mouseY - this.offsetY) / this.scale;
+
+            this.scale = newScale;
+
+            const afterZoomX = (mouseX - this.offsetX) / this.scale;
+            const afterZoomY = (mouseY - this.offsetY) / this.scale;
+
+            this.offsetX += (afterZoomX - beforeZoomX) * this.scale;
+            this.offsetY += (afterZoomY - beforeZoomY) * this.scale;
+
+            this.draw();
+            return;
+        }
+
+        // Handle trackpad two-finger scrolling for panning
+        if (isTrackpad && !e.ctrlKey && !e.metaKey) {
+            // Two-finger scroll = pan the canvas
+            const panSensitivity = 1.0;
+            this.offsetX -= e.deltaX * panSensitivity;
+            this.offsetY -= e.deltaY * panSensitivity;
+            this.draw();
+            return;
+        }
+
+        // Handle zoom (mouse wheel or trackpad with modifier keys)
         const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
         const newScale = Math.max(0.1, Math.min(3.0, this.scale * zoomFactor));
-        
+
         // Zoom towards mouse position
         const beforeZoomX = (mouseX - this.offsetX) / this.scale;
         const beforeZoomY = (mouseY - this.offsetY) / this.scale;
-        
+
         this.scale = newScale;
-        
+
         const afterZoomX = (mouseX - this.offsetX) / this.scale;
         const afterZoomY = (mouseY - this.offsetY) / this.scale;
-        
+
         this.offsetX += (afterZoomX - beforeZoomX) * this.scale;
         this.offsetY += (afterZoomY - beforeZoomY) * this.scale;
-        
+
         this.draw();
     }
     
