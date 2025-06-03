@@ -1,6 +1,8 @@
-# HumOS Canvas with AI Integration
+# HumOS Canvas - Your Personal AI Integration Framework
 
-A modern infinite canvas application with AI-powered idea generation, built with Vite and supporting multiple AI providers.
+**Your Personal Interface for Enhanced AI Collaboration**
+
+HumOS Canvas is a modern infinite canvas application with AI-powered idea generation, built with Vite and supporting multiple AI providers. 
 
 ## Features
 
