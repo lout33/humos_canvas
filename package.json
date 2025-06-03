@@ -1,7 +1,7 @@
 {
-  "name": "infinite_canvas_v4",
+  "name": "humos_canvas",
   "version": "1.0.0",
-  "description": "",
+  "description": "HumOS Canvas - AI-powered mind mapping and brainstorming tool with infinite canvas workspace",
   "main": "main.js",
   "type": "module",
   "scripts": {

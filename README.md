@@ -1,4 +1,4 @@
-# Infinite Canvas with AI Integration
+# HumOS Canvas with AI Integration
 
 A modern infinite canvas application with AI-powered idea generation, built with Vite and supporting multiple AI providers.
 
