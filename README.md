@@ -2,7 +2,9 @@
 
 **Your Personal Interface for Enhanced AI Collaboration**
 
-HumOS Canvas is a modern infinite canvas application with AI-powered idea generation, built with Vite and supporting multiple AI providers. 
+![HumOS Canvas Interface](public/image.png)
+
+HumOS Canvas is a modern infinite canvas application with AI-powered idea generation, built with Vite and supporting multiple AI providers.
 
 ## Features
 
@@ -14,6 +16,23 @@ HumOS Canvas is a modern infinite canvas application with AI-powered idea genera
 - **Undo/Redo**: Full history management
 - **Auto-save**: Local storage persistence
 - **Export**: JSON export functionality
+
+## About HumOS
+
+HumOS (Human-AI Integration Framework) aims to enhance human capabilities, foster self-understanding, and contribute to solving complex challenges through continuous learning and collaboration. The system is designed around the "Synergy Loop" - a continuous cycle of information flow and co-creation between human and AI.
+
+### Icon Design Philosophy
+
+The HumOS icon represents the core philosophy of human-AI integration:
+
+- **Left side (Blue gradient)**: Human consciousness, brain patterns, and cognitive processes
+- **Right side (Gold gradient)**: AI neural networks, processing capabilities, and machine learning
+- **Central synergy core (White)**: The integration point where human and AI capabilities merge and amplify each other
+- **Flow lines (Dashed curves)**: Continuous data exchange, learning loops, and collaborative information flow
+- **Enhancement nodes (Corner circles)**: Augmented capabilities and expanded potential emerging from the integration
+- **Connection lines**: The network effect of human-AI collaboration extending capabilities in all directions
+
+The design symbolizes the transformation from separate human and AI systems to an integrated framework where both enhance each other's capabilities.
 
 ## AI Provider Configuration
 
